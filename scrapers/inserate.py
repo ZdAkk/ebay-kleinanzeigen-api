@@ -87,6 +87,17 @@ async def get_ads(page):
                 image_element = await article.query_selector(".imagebox img")
                 image_url = await image_element.get_attribute("src") if image_element else ""
 
+                # Get location and time
+                location_element = await article.query_selector(".aditem-main--top--left")
+                location_text = await location_element.inner_text() if location_element else ""
+                # Clean location text by removing icon text and extra whitespace
+                location_text = " ".join(location_text.split()).strip()
+
+                time_element = await article.query_selector(".aditem-main--top--right")
+                time_text = await time_element.inner_text() if time_element else ""
+                # Clean time text by removing icon text and extra whitespace
+                time_text = " ".join(time_text.split()).strip()
+
                 if data_adid and data_href:
                     data_href = f"https://www.kleinanzeigen.de{data_href}"
                     results.append({
@@ -95,7 +106,9 @@ async def get_ads(page):
                         "title": title_text,
                         "price": price_text,
                         "description": description_text,
-                        "image_url": image_url
+                        "image_url": image_url,
+                        "location": location_text,
+                        "time": time_text
                     })
         return results
     except Exception as e:
