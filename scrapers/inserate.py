@@ -36,7 +36,8 @@ async def get_inserate_klaz(browser_manager: PlaywrightManager,
         params['radius'] = radius
 
     # Construct the full URL and get it
-    search_url = base_url + search_path + ("?" + urlencode(params) if params else "")
+    search_url = base_url + search_path + \
+        ("?" + urlencode(params) if params else "")
 
     page = await browser_manager.new_context_page()
     try:
@@ -77,12 +78,25 @@ async def get_ads(page):
                 price = await article.query_selector("p.aditem-main--middle--price-shipping--price")
                 # strip € and VB and strip whitespace
                 price_text = await price.inner_text() if price else ""
-                price_text = price_text.replace("€", "").replace("VB", "").replace(".", "").strip()
+                price_text = price_text.replace("€", "").replace(
+                    "VB", "").replace(".", "").strip()
                 description = await article.query_selector("p.aditem-main--middle--description")
                 description_text = await description.inner_text() if description else ""
+
+                # Get main image URL
+                image_element = await article.query_selector(".imagebox img")
+                image_url = await image_element.get_attribute("src") if image_element else ""
+
                 if data_adid and data_href:
                     data_href = f"https://www.kleinanzeigen.de{data_href}"
-                    results.append({"adid": data_adid, "url": data_href, "title": title_text, "price": price_text, "description": description_text})
+                    results.append({
+                        "adid": data_adid,
+                        "url": data_href,
+                        "title": title_text,
+                        "price": price_text,
+                        "description": description_text,
+                        "image_url": image_url
+                    })
         return results
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
