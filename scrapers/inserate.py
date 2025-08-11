@@ -20,7 +20,7 @@ async def get_inserate_klaz(browser_manager: PlaywrightManager,
         # Convert prices to strings; if one is None, leave its place empty
         min_price_str = str(min_price) if min_price is not None else ""
         max_price_str = str(max_price) if max_price is not None else ""
-        price_path = f"/preis:{min_price_str}:{max_price_str}"
+        price_path = f"/s-preis:{min_price_str}:{max_price_str}"
 
     # Build the search path with price and page information
     search_path = f"{price_path}/s-seite"
@@ -38,7 +38,7 @@ async def get_inserate_klaz(browser_manager: PlaywrightManager,
     # Construct the full URL and get it
     search_url = base_url + search_path + \
         ("?" + urlencode(params) if params else "")
-
+    
     page = await browser_manager.new_context_page()
     try:
         await page.goto(search_url.format(page=1), timeout=120000)
