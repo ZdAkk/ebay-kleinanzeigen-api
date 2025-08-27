@@ -23,7 +23,7 @@ async def get_inserate_klaz(browser_manager: PlaywrightManager,
         price_path = f"/s-preis:{min_price_str}:{max_price_str}"
 
     # Build the search path with price and page information
-    search_path = f"{price_path}/s-seite"
+    search_path = "/s-seite"
     search_path += ":{page}"
 
     # Build query parameters as before
