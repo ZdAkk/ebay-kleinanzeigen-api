@@ -4,6 +4,9 @@ from fastapi import HTTPException
 
 from utils.browser import PlaywrightManager
 
+# Maximum number of ads per page on Kleinanzeigen
+MAX_ADS_PER_PAGE = 25
+
 
 async def get_inserate_klaz(browser_manager: PlaywrightManager,
                             query: str = None,
@@ -14,6 +17,7 @@ async def get_inserate_klaz(browser_manager: PlaywrightManager,
                             page_count: int = 1):
     base_url = "https://www.kleinanzeigen.de"
 
+    # CURRENLTY NOT USED
     # Build the price filter part of the path
     price_path = ""
     if min_price is not None or max_price is not None:
@@ -21,6 +25,7 @@ async def get_inserate_klaz(browser_manager: PlaywrightManager,
         min_price_str = str(min_price) if min_price is not None else ""
         max_price_str = str(max_price) if max_price is not None else ""
         price_path = f"/s-preis:{min_price_str}:{max_price_str}"
+    # END CURRENLTY NOT USED
 
     # Build the search path with price and page information
     search_path = "/s-seite"
@@ -47,6 +52,11 @@ async def get_inserate_klaz(browser_manager: PlaywrightManager,
         for i in range(page_count):
             page_results = await get_ads(page)
             results.extend(page_results)
+
+            # Check if we got 25 ads (maximum per page)
+            # If we got fewer than 25, we've reached the last page
+            if len(page_results) < MAX_ADS_PER_PAGE:
+                break
 
             if i < page_count - 1:
                 try:
