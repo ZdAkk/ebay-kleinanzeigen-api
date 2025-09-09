@@ -47,7 +47,6 @@ async def get_inserate_details(url: str, page):
         description = await lib.get_element_content(page, "#viewad-description-text")
         if description:
             description = re.sub(r'[ \t]+', ' ', description).strip()
-            description = re.sub(r'\n+', '\n', description)
 
         images = await lib.get_image_sources(page, "#viewad-image")
         seller_details = await lib.get_seller_details(page)
