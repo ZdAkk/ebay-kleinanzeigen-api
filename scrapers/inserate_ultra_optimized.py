@@ -9,8 +9,9 @@ import asyncio
 import time
 import random
 import gc
+from datetime import datetime, date, timedelta
 from urllib.parse import urlencode
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Optional, Tuple
 
 from fastapi import HTTPException
 
@@ -30,6 +31,34 @@ from utils.asyncio_optimizations import (
     EventLoopOptimizer,
     monitor_slow_coroutines,
 )
+
+
+def _parse_kleinanzeigen_date(text: str) -> Optional[str]:
+    """Convert a Kleinanzeigen listing date string to an ISO 8601 datetime string.
+
+    Handles three formats:
+      'Heute, 22:06'   → today's date at that time
+      'Gestern, 19:30' → yesterday's date at that time
+      '26.04.2026'     → that date at midnight (no time shown for older listings)
+    Returns None if the text is empty or unparseable.
+    """
+    text = text.strip()
+    if not text:
+        return None
+    try:
+        today = date.today()
+        if text.startswith("Heute,"):
+            h, m = map(int, text.split(",", 1)[1].strip().split(":"))
+            return datetime(today.year, today.month, today.day, h, m).isoformat()
+        if text.startswith("Gestern,"):
+            yesterday = today - timedelta(days=1)
+            h, m = map(int, text.split(",", 1)[1].strip().split(":"))
+            return datetime(yesterday.year, yesterday.month, yesterday.day, h, m).isoformat()
+        # DD.MM.YYYY
+        d, mo, y = text.split(".")
+        return datetime(int(y), int(mo), int(d)).isoformat()
+    except Exception:
+        return None
 
 
 class UltraOptimizedScraper:
@@ -121,9 +150,12 @@ class UltraOptimizedScraper:
             desc_task = self._get_text_content(
                 article, "p.aditem-main--middle--description"
             )
+            date_task = self._get_text_content(
+                article, ".aditem-main--top--right"
+            )
 
-            title_text, price_text, description_text = await asyncio.gather(
-                title_task, price_task, desc_task, return_exceptions=True
+            title_text, price_text, description_text, date_raw = await asyncio.gather(
+                title_task, price_task, desc_task, date_task, return_exceptions=True
             )
 
             # Process price text efficiently
@@ -137,6 +169,10 @@ class UltraOptimizedScraper:
             else:
                 price_text = ""
 
+            published_at = _parse_kleinanzeigen_date(
+                date_raw if isinstance(date_raw, str) else ""
+            )
+
             return {
                 "adid": data_adid,
                 "url": f"https://www.kleinanzeigen.de{data_href}",
@@ -145,6 +181,7 @@ class UltraOptimizedScraper:
                 "description": description_text
                 if isinstance(description_text, str)
                 else "",
+                "published_at": published_at,
             }
 
         except Exception:

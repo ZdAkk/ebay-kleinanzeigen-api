@@ -22,7 +22,7 @@ LARGE_RESULT_URL = (
     "k0c216+autos.marke_s:volkswagen"
 )
 
-EXPECTED_RESULT_FIELDS   = {"adid", "url", "title", "price", "description"}
+EXPECTED_RESULT_FIELDS   = {"adid", "url", "title", "price", "description", "published_at"}
 EXPECTED_METRICS_FIELDS  = {"pages_requested", "pages_successful", "success_rate", "average_page_time"}
 EXPECTED_TOP_FIELDS      = {"success", "results", "unique_results", "time_taken",
                             "total_results", "performance_metrics"}

@@ -207,7 +207,8 @@ curl -X POST http://localhost:8000/inserate-by-url \
       "url": "https://www.kleinanzeigen.de/s-anzeige/...",
       "title": "VW Golf Variant 2.0 TDI Automatik Klima",
       "price": "12500",
-      "description": "Gepflegter Zustand, Erstbesitz..."
+      "description": "Gepflegter Zustand, Erstbesitz...",
+      "published_at": "2026-05-03T22:06:00"
     }
   ],
   "unique_results": 75,
@@ -236,6 +237,7 @@ curl -X POST http://localhost:8000/inserate-by-url \
   - `title` — Listing title
   - `price` — Price as string (numeric digits only, no currency symbol; empty string if not set)
   - `description` — Short teaser text from the listing card
+  - `published_at` — ISO 8601 publish datetime (e.g. `"2026-05-03T22:06:00"`). Older listings show only the date at midnight (`"2026-04-26T00:00:00"`). `null` if not shown on the card.
 - **`unique_results`**: Total number of listings returned across all fetched pages.
 - **`total_results`**: Total hits reported by Kleinanzeigen for this search (e.g. `120140`). Extracted from the page breadcrumb on the first page load — no extra request needed.
 - **`time_taken`**: Total elapsed time in seconds.
@@ -325,7 +327,8 @@ The `/inserate-detailed` response additionally nests a `details` object inside e
       "url": "https://www.kleinanzeigen.de/s-anzeige/...",
       "title": "Example Item",
       "price": "100",
-      "description": "Short teaser text..."
+      "description": "Short teaser text...",
+      "published_at": "2026-05-03T22:06:00"
     }
   ],
   "unique_results": 75,
