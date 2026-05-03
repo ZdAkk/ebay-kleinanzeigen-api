@@ -71,7 +71,10 @@ async def scrape_by_url(
 
         # Fetch pages sequentially — Kleinanzeigen blocks concurrent requests
         # from the same IP even with staggered starts.
+        # A short delay between pages further reduces bot-detection risk.
         for page_num in range(1, max_pages + 1):
+            if page_num > 1:
+                await asyncio.sleep(2)
             result = await scraper.ultra_optimized_fetch_page(
                 inject_page(base_url, page_num), page_num,
                 extra_selectors=_TOTAL_RESULTS_SELECTOR if page_num == 1 else None,

@@ -9,8 +9,11 @@ Run with:
 
 Data is fetched once per session and shared across all tests to avoid
 hitting Kleinanzeigen rate limits from rapid back-to-back requests.
+Fixtures are chained so each request waits for the previous one before
+sleeping — guaranteeing sequential execution with cooldowns.
 """
 
+import time
 import pytest
 import httpx
 
@@ -26,6 +29,8 @@ EXPECTED_RESULT_FIELDS   = {"adid", "url", "title", "price", "description", "pub
 EXPECTED_METRICS_FIELDS  = {"pages_requested", "pages_successful", "success_rate", "average_page_time"}
 EXPECTED_TOP_FIELDS      = {"success", "results", "unique_results", "time_taken",
                             "total_results", "performance_metrics"}
+
+COOLDOWN = 5  # seconds between requests to avoid rate limiting
 
 
 # ── Fixtures — fetch once, reuse across all tests ─────────────────────────────
@@ -48,9 +53,24 @@ def single_page_response(http_client):
 
 
 @pytest.fixture(scope="session")
-def four_page_response(http_client, single_page_response):
-    import time
-    time.sleep(5)  # wait after single-page request to avoid rate limiting
+def two_page_response(http_client, single_page_response):
+    time.sleep(COOLDOWN)
+    resp = http_client.post("/inserate-by-url", json={"url": LARGE_RESULT_URL, "max_pages": 2})
+    assert resp.status_code == 200, f"HTTP {resp.status_code}: {resp.text[:200]}"
+    return resp.json()
+
+
+@pytest.fixture(scope="session")
+def three_page_response(http_client, two_page_response):
+    time.sleep(COOLDOWN)
+    resp = http_client.post("/inserate-by-url", json={"url": LARGE_RESULT_URL, "max_pages": 3})
+    assert resp.status_code == 200, f"HTTP {resp.status_code}: {resp.text[:200]}"
+    return resp.json()
+
+
+@pytest.fixture(scope="session")
+def four_page_response(http_client, three_page_response):
+    time.sleep(COOLDOWN)
     resp = http_client.post("/inserate-by-url", json={"url": LARGE_RESULT_URL, "max_pages": 4})
     assert resp.status_code == 200, f"HTTP {resp.status_code}: {resp.text[:200]}"
     return resp.json()
@@ -90,7 +110,7 @@ def test_total_results_exceeds_100k(single_page_response):
     assert total > 100_000, f"Expected total_results > 100,000, got {total}"
 
 
-# ── Result counts ─────────────────────────────────────────────────────────────
+# ── Result counts per page ────────────────────────────────────────────────────
 
 def test_single_page_returns_25_results(single_page_response):
     assert single_page_response["unique_results"] == 25, (
@@ -99,11 +119,18 @@ def test_single_page_returns_25_results(single_page_response):
     assert len(single_page_response["results"]) == 25
 
 
-def test_single_page_metrics(single_page_response):
-    pm = single_page_response["performance_metrics"]
-    assert pm["pages_requested"] == 1
-    assert pm["pages_successful"] == 1
-    assert pm["success_rate"] == 100.0
+def test_two_pages_returns_50_results(two_page_response):
+    assert two_page_response["unique_results"] == 50, (
+        f"Expected 50 results for 2 pages, got {two_page_response['unique_results']}"
+    )
+    assert len(two_page_response["results"]) == 50
+
+
+def test_three_pages_returns_75_results(three_page_response):
+    assert three_page_response["unique_results"] == 75, (
+        f"Expected 75 results for 3 pages, got {three_page_response['unique_results']}"
+    )
+    assert len(three_page_response["results"]) == 75
 
 
 def test_four_pages_returns_100_results(four_page_response):
@@ -111,6 +138,29 @@ def test_four_pages_returns_100_results(four_page_response):
         f"Expected 100 results for 4 pages, got {four_page_response['unique_results']}"
     )
     assert len(four_page_response["results"]) == 100
+
+
+# ── Metrics per page count ────────────────────────────────────────────────────
+
+def test_single_page_metrics(single_page_response):
+    pm = single_page_response["performance_metrics"]
+    assert pm["pages_requested"] == 1
+    assert pm["pages_successful"] == 1
+    assert pm["success_rate"] == 100.0
+
+
+def test_two_pages_metrics(two_page_response):
+    pm = two_page_response["performance_metrics"]
+    assert pm["pages_requested"] == 2
+    assert pm["pages_successful"] == 2
+    assert pm["success_rate"] == 100.0
+
+
+def test_three_pages_metrics(three_page_response):
+    pm = three_page_response["performance_metrics"]
+    assert pm["pages_requested"] == 3
+    assert pm["pages_successful"] == 3
+    assert pm["success_rate"] == 100.0
 
 
 def test_four_pages_metrics(four_page_response):
