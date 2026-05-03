@@ -162,8 +162,9 @@ class UltraOptimizedScraper:
 
     @monitor_slow_coroutines(threshold=2.0)
     async def ultra_optimized_fetch_page(
-        self, url: str, page_num: int, retry_count: int = 2
-    ) -> Tuple[List[Dict], PageMetrics]:
+        self, url: str, page_num: int, retry_count: int = 2,
+        extra_selectors: Dict[str, str] = None,
+    ) -> Tuple[List[Dict], PageMetrics, Dict[str, str]]:
         """
         Ultra-optimized page fetching with all performance enhancements.
 
@@ -205,6 +206,17 @@ class UltraOptimizedScraper:
                     # Extract ads with optimized method
                     results = await self.extract_ads_optimized(page)
 
+                    # Extract any caller-requested selectors from the same page
+                    extras: Dict[str, str] = {}
+                    if extra_selectors:
+                        for key, selector in extra_selectors.items():
+                            try:
+                                el = await page.query_selector(selector)
+                                if el:
+                                    extras[key] = await el.inner_text()
+                            except Exception:
+                                pass
+
                     # Create successful metrics
                     metrics = PageMetrics(
                         page_number=page_num,
@@ -216,7 +228,7 @@ class UltraOptimizedScraper:
                         results_count=len(results),
                     )
 
-                    return results, metrics
+                    return results, metrics, extras
 
                 except Exception as e:
                     last_error = e
@@ -265,7 +277,7 @@ class UltraOptimizedScraper:
                 results_count=0,
             )
 
-            return [], metrics
+            return [], metrics, {}
 
     async def ultra_optimized_scrape(
         self,
@@ -350,7 +362,7 @@ class UltraOptimizedScraper:
                         )
                         continue
 
-                    page_results, page_metrics = result
+                    page_results, page_metrics, _ = result
                     all_results.extend(page_results)
                     all_metrics.append(page_metrics)
                     tracker.add_page_metric(page_metrics)

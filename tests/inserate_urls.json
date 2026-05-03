@@ -1,0 +1,18 @@
+[
+  {
+    "label": "Autos – Klima, category only (no brand/year filter)",
+    "url": "https://www.kleinanzeigen.de/s-autos/klima/k0c216"
+  },
+  {
+    "label": "Autos – VW + Klima, brand filter",
+    "url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.marke_s:volkswagen"
+  },
+  {
+    "label": "Autos – VW + Klima, year>=2008, fuel=lpg, km, automatic, kombi/suv",
+    "url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.ez_i:2008%2C+autos.fuel_s:lpg+autos.km_i:2%2C+autos.marke_s:volkswagen+autos.shift_s:automatik+autos.typ_s:(kombi%2Csuv)"
+  },
+  {
+    "label": "Autos – VW + Klima, year>=2008, fuel=cng/lpg, km, automatic, kombi/suv",
+    "url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.ez_i:2008%2C+autos.fuel_s:(cng%2Clpg)+autos.km_i:2%2C+autos.marke_s:volkswagen+autos.shift_s:automatik+autos.typ_s:(kombi%2Csuv)"
+  }
+]

@@ -60,6 +60,14 @@ uvicorn main:app --reload
 
 The API will be available at `http://localhost:8000`
 
+#### Non-headless mode (visible browser)
+
+Set the `HEADLESS` environment variable to `false` to watch the browser while scraping — useful during development:
+
+```sh
+HEADLESS=false uvicorn main:app --reload
+```
+
 ### Installation using UV
 
 #### Prerequisites
@@ -76,6 +84,12 @@ uv sync
 
 ```sh
 uv run uvicorn main:app --reload
+```
+
+#### Non-headless mode with UV
+
+```sh
+HEADLESS=false uv run uvicorn main:app --reload
 ```
 
 ### Installation using Docker
@@ -151,53 +165,199 @@ Same as `/inserate` endpoint, plus:
 GET /inserate-detailed?query=laptop&page_count=2&max_concurrent_details=5
 ```
 
+#### 4. Scrape by URL
+
+**Endpoint:** `POST /inserate-by-url`
+
+**Description:** Scrape listings using a full Kleinanzeigen search URL. All filters already encoded in the URL (category, brand, year, fuel type, transmission, car type, etc.) are preserved as-is. Page numbers are injected automatically for multi-page fetching. Use this when `/inserate` does not yet support a filter you need.
+
+Pages are fetched **sequentially** to avoid IP-level rate limiting by Kleinanzeigen.
+
+##### Request Body
+
+```json
+{
+  "url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.marke_s:volkswagen",
+  "max_pages": 3
+}
+```
+
+- **`url`** *(string, required)*: Any Kleinanzeigen search or category URL.
+- **`max_pages`** *(integer, optional)*: Number of pages to fetch (default: 1). Each page returns up to 25 listings.
+
+##### Example Request
+
+```sh
+curl -X POST http://localhost:8000/inserate-by-url \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.ez_i:2008%2C+autos.fuel_s:(cng%2Clpg)+autos.marke_s:volkswagen+autos.shift_s:automatik+autos.typ_s:(kombi%2Csuv)",
+    "max_pages": 3
+  }'
+```
+
+##### Example Response
+
+```json
+{
+  "success": true,
+  "results": [
+    {
+      "adid": "3398033022",
+      "url": "https://www.kleinanzeigen.de/s-anzeige/...",
+      "title": "VW Golf Variant 2.0 TDI Automatik Klima",
+      "price": "12500",
+      "description": "Gepflegter Zustand, Erstbesitz..."
+    }
+  ],
+  "unique_results": 75,
+  "total_results": 120140,
+  "time_taken": 12.358,
+  "performance_metrics": {
+    "pages_requested": 3,
+    "pages_successful": 3,
+    "success_rate": 100.0,
+    "average_page_time": 4.119
+  },
+  "browser_metrics": {
+    "contexts_created": 3,
+    "contexts_reused": 0,
+    "contexts_in_pool": 3,
+    "contexts_in_use": 0
+  }
+}
+```
+
+**Response fields:**
+
+- **`results`**: Array of listing objects. Each listing contains:
+  - `adid` — Kleinanzeigen internal listing ID
+  - `url` — Direct link to the listing
+  - `title` — Listing title
+  - `price` — Price as string (numeric digits only, no currency symbol; empty string if not set)
+  - `description` — Short teaser text from the listing card
+- **`unique_results`**: Total number of listings returned across all fetched pages.
+- **`total_results`**: Total hits reported by Kleinanzeigen for this search (e.g. `120140`). Extracted from the page breadcrumb on the first page load — no extra request needed.
+- **`time_taken`**: Total elapsed time in seconds.
+- **`performance_metrics.pages_requested`** / **`pages_successful`** / **`success_rate`**: Page-level fetch statistics.
+
+#### 5. Convert URL to API Parameters
+
+**Endpoint:** `POST /convert-url`
+
+**Description:** Parses a Kleinanzeigen URL and returns two groups of parameters: `inserate_params` (what the `/inserate` endpoint currently understands) and `unmapped` (filters not yet supported by `/inserate`, such as category, brand, year, or transmission). Useful for inspecting which parts of a URL can be expressed via the structured API.
+
+##### Request Body
+
+```json
+{
+  "url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.marke_s:volkswagen"
+}
+```
+
+##### Example Request
+
+```sh
+curl -X POST http://localhost:8000/convert-url \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.ez_i:2008%2C+autos.marke_s:volkswagen"}' \
+  | python -m json.tool
+```
+
+##### Example Response
+
+```json
+{
+  "inserate_params": {
+    "query": "klima",
+    "page_count": 1
+  },
+  "unmapped": {
+    "category_slug": "s-autos",
+    "subcategory": "volkswagen",
+    "category_id": 216,
+    "year_from": 2008,
+    "year_to": null,
+    "brands": ["volkswagen"]
+  }
+}
+```
+
 ### Documentation
 
 #### API Response Format
 
-All API endpoints return responses in the following JSON format:
-
-##### API Response Format
+##### `GET /inserate` and `GET /inserate-detailed`
 
 ```json
 {
   "success": true,
   "time_taken": 1.23,
-  "unique_results": 100,
-  "data": [...],
-  "performance_metrics": {
-    "pages_requested": 5,
-    "pages_successful": 5,
-    "success_rate": 100.0,
-    "average_page_time": 2.45
-  }
-}
-```
-
-##### Combined Endpoint Response Format
-
-```json
-{
-  "success": true,
-  "time_taken": 3.45,
   "unique_results": 25,
   "data": [
     {
       "adid": "123456",
+      "url": "https://www.kleinanzeigen.de/s-anzeige/...",
       "title": "Example Item",
       "price": "100",
-      "details": {
-        "id": "123456",
-        "description": "Full description...",
-        "seller": {...},
-        "location": {...}
-      }
+      "description": "Short teaser text..."
     }
   ],
   "performance_metrics": {
-    "listings_found": 25,
-    "details_fetched": 25,
-    "success_rate": 100.0
+    "pages_requested": 1,
+    "pages_successful": 1,
+    "success_rate": 100.0,
+    "average_page_time": 1.23
+  }
+}
+```
+
+The `/inserate-detailed` response additionally nests a `details` object inside each listing with full description, seller info, and location.
+
+##### `POST /inserate-by-url`
+
+```json
+{
+  "success": true,
+  "results": [
+    {
+      "adid": "123456",
+      "url": "https://www.kleinanzeigen.de/s-anzeige/...",
+      "title": "Example Item",
+      "price": "100",
+      "description": "Short teaser text..."
+    }
+  ],
+  "unique_results": 75,
+  "total_results": 120140,
+  "time_taken": 12.358,
+  "performance_metrics": {
+    "pages_requested": 3,
+    "pages_successful": 3,
+    "success_rate": 100.0,
+    "average_page_time": 4.119
+  },
+  "browser_metrics": { ... }
+}
+```
+
+`total_results` is the total hit count shown by Kleinanzeigen (e.g. `120140`). It is extracted from the breadcrumb of the first page — no extra request is made. The field is omitted if the breadcrumb is not found.
+
+##### `POST /convert-url`
+
+```json
+{
+  "inserate_params": {
+    "query": "klima",
+    "page_count": 1
+  },
+  "unmapped": {
+    "category_slug": "s-autos",
+    "subcategory": "volkswagen",
+    "category_id": 216,
+    "year_from": 2008,
+    "year_to": null,
+    "brands": ["volkswagen"]
   }
 }
 ```
