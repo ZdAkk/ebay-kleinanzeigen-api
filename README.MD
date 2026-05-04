@@ -145,13 +145,94 @@ curl "http://localhost:8000/inserate?query=fahrrad&page_count=10&min_publish_dat
 
 ##### Path Parameters
 
-- **`id`** *(string)*: The unique identifier of the listing to fetch details for.
+- **`id`** *(string)*: The listing identifier. Two formats are accepted:
 
-##### Example Request
+  | Format | Example | Source |
+  |--------|---------|--------|
+  | Full URL segment *(recommended)* | `3399373623-220-16792` | Last path segment of the listing `url` field from search results |
+  | Plain adid | `3399373623` | The `adid` field from search results |
 
-```http
-GET /inserat/12345
+  Kleinanzeigen listing URLs follow the pattern:
+  ```
+  /s-anzeige/{slug}/{adid}-{category_id}-{location_id}
+  ```
+  The suffix `-{category_id}-{location_id}` is used by Kleinanzeigen for server-side routing (CDN/load balancer can route directly without a database lookup). Using the full segment avoids a potential server-side redirect — Kleinanzeigen may or may not redirect depending on the listing.
+
+##### curl Examples
+
+**With full URL segment (recommended, ~4s):**
+```sh
+curl -s http://localhost:8000/inserat/3399373623-220-16792 | python -m json.tool
 ```
+
+**With plain adid only (also works, redirect may or may not occur):**
+```sh
+curl -s http://localhost:8000/inserat/3399373623 | python -m json.tool
+```
+
+**Tip:** When iterating over search results, use the `url` field directly — extract the last path segment to get the full id:
+```sh
+# Extract the id from a listing url
+echo "https://www.kleinanzeigen.de/s-anzeige/fendt-bianco/3399373623-220-16792" | grep -oP '[^/]+$'
+# → 3399373623-220-16792
+```
+
+##### Example Response
+
+```json
+{
+  "success": true,
+  "time_taken": 4.108,
+  "data": {
+    "id": "3399373623",
+    "url_requested": "https://www.kleinanzeigen.de/s-anzeige/3399373623-220-16792",
+    "url_redirected": "https://www.kleinanzeigen.de/s-anzeige/fendt-bianco-aktiv-550-kg/3399373623-220-16792",
+    "categories": ["Wohnwagen & Reisemobile", "Wohnwagen"],
+    "title": "Fendt Bianco Aktiv 550 KG",
+    "status": "active",
+    "price": {
+      "amount": "12500",
+      "currency": "€",
+      "negotiable": true
+    },
+    "delivery": "pickup",
+    "location": {
+      "zip": "88299",
+      "city": "Leutkirch im Allgäu"
+    },
+    "views": "142",
+    "description": "Verkaufe unseren gepflegten Fendt Bianco...",
+    "images": [
+      "https://img.kleinanzeigen.de/api/v1/prod-ads/images/..."
+    ],
+    "details": {
+      "Baujahr": "2015",
+      "Zustand": "Gebraucht"
+    },
+    "features": {},
+    "seller": {
+      "name": "Max Mustermann",
+      "type": "private"
+    },
+    "extra_info": {}
+  },
+  "performance_metrics": {
+    "success_rate": 100,
+    "time_taken": 4.108
+  }
+}
+```
+
+**Response fields:**
+
+- **`data.id`** — Kleinanzeigen listing ID (numeric string).
+- **`data.url_requested`** — The URL sent to Kleinanzeigen. When called with a plain adid, this is the short form without slug.
+- **`data.url_redirected`** — The final URL after any server-side redirect. When called with a plain adid, this contains the full canonical URL including slug and routing suffix `{adid}-{category_id}-{location_id}`. Identical to `url_requested` when the full segment was passed.
+- **`data.status`** — Listing status: `active`, `sold`, `reserved`, or `deleted`.
+- **`data.price.negotiable`** — `true` if the price is marked as negotiable (VB).
+- **`data.delivery`** — `pickup`, `shipping`, or `null`.
+- **`data.details`** — Key/value pairs of listing attributes (e.g. Baujahr, Zustand).
+- **`data.features`** — Additional configuration options if present.
 
 #### 3. Fetch Listings with Details (Combined)
 
@@ -524,6 +605,23 @@ Distributed under the MIT License. See `LICENSE` for more information.
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Changelog
+
+### May 2026 — `GET /inserat/{id}` URL tracking (`url_requested` / `url_redirected`)
+
+**Maintainer:** [Darko Palić](https://github.com/dpalic)
+
+#### Changed
+
+- **`GET /inserat/{id}` response** now includes two URL fields in `data`:
+  - `url_requested` — the URL that was sent to Kleinanzeigen (built from the id passed to the endpoint).
+  - `url_redirected` — the final URL as reported by the browser after any server-side redirect. Identical to `url_requested` when no redirect occurred.
+- Useful when calling with a plain adid (e.g. `/inserat/3399373623`) to discover the canonical URL including slug and routing suffix.
+
+#### Tests
+
+- 13 live integration tests in `tests/test_inserat_live.py` covering both id formats (full segment and plain adid), `url_requested`, `url_redirected`, content fields, and status validation.
+
+---
 
 ### May 2026 — Intraday `min_publish_date` precision (datetime)
 

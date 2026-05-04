@@ -15,6 +15,7 @@ from utils.error_handling import (
 async def get_inserate_details(url: str, page):
     try:
         await page.goto(url, timeout=120000)
+        final_url = page.url
 
         try:
             await page.wait_for_selector(
@@ -97,6 +98,8 @@ async def get_inserate_details(url: str, page):
 
         return {
             "id": ad_id,
+            "url_requested": url,
+            "url_redirected": final_url,
             "categories": categories,
             "title": title.split(" • ")[-1].strip()
             if " • " in title
