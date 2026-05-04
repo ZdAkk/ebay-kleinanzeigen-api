@@ -2,6 +2,7 @@ from fastapi import HTTPException
 from libs.websites import kleinanzeigen as lib
 import re
 import time
+from datetime import datetime, timezone
 from utils.browser import OptimizedPlaywrightManager
 from utils.performance import PageMetrics
 from utils.error_handling import (
@@ -70,7 +71,7 @@ async def get_inserate_details(url: str, page):
             description = re.sub(r"[ \t]+", " ", description).strip()
             description = re.sub(r"\n+", "\n", description)
 
-        images = await lib.get_image_sources(page, "#viewad-image")
+        images = await lib.get_image_sources(page, ".galleryimage-element img")
         seller_details = await lib.get_seller_details(page)
         details = (
             await lib.get_details(page)
@@ -98,6 +99,7 @@ async def get_inserate_details(url: str, page):
 
         return {
             "id": ad_id,
+            "scraped_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "url_requested": url,
             "url_redirected": final_url,
             "categories": categories,
@@ -108,11 +110,14 @@ async def get_inserate_details(url: str, page):
             "price": price,
             "delivery": shipping,
             "location": location,
-            "views": views if views else "0",
-            "description": description,
-            "images": images,
+            "media": {
+                "images": {"count": len(images), "urls": images},
+                "videos": {"count": 0, "urls": []},
+                "audios": {"count": 0, "urls": []},
+            },
             "details": details,
             "features": features,
+            "description": description,
             "seller": seller_details,
             "extra_info": extra_info,
         }

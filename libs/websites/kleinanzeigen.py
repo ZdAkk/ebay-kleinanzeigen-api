@@ -1,4 +1,5 @@
 from typing import Dict, List, Optional, Union, Any
+from urllib.parse import urlparse, parse_qs
 from playwright.async_api import Page, ElementHandle
 
 
@@ -17,11 +18,13 @@ async def get_elements_content(page: Page, selector: str) -> List[str]:
 
 
 async def get_image_sources(page: Page, selector: str) -> List[str]:
+    elements: List[ElementHandle] = await page.query_selector_all(selector)
+    seen: set = set()
     images: List[str] = []
-    image_element: Optional[ElementHandle] = await page.query_selector(selector)
-    if image_element:
-        src: Optional[str] = await image_element.get_attribute("src")
-        if src:
+    for el in elements:
+        src: str = await el.get_attribute("src") or await el.get_attribute("data-src") or ""
+        if "prod-ads" in src and src not in seen:
+            seen.add(src)
             images.append(src)
     return images
 
