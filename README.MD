@@ -185,8 +185,29 @@ Pages are fetched **sequentially** to avoid IP-level rate limiting by Kleinanzei
 - **`url`** *(string, required)*: Any Kleinanzeigen search or category URL.
 - **`max_pages`** *(integer, optional)*: Number of pages to fetch (default: 1). Each page returns up to 25 listings.
 
-##### Example Request
+##### curl Examples
 
+**Single page — VW with Klima (25 results):**
+```sh
+curl -X POST http://localhost:8000/inserate-by-url \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.marke_s:volkswagen",
+    "max_pages": 1
+  }'
+```
+
+**3 pages — VW with Klima (up to 75 results):**
+```sh
+curl -X POST http://localhost:8000/inserate-by-url \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.marke_s:volkswagen",
+    "max_pages": 3
+  }'
+```
+
+**With full filters — VW Kombi/SUV, Automatik, CNG/LPG, ab 2008, 3 pages:**
 ```sh
 curl -X POST http://localhost:8000/inserate-by-url \
   -H "Content-Type: application/json" \
@@ -194,6 +215,24 @@ curl -X POST http://localhost:8000/inserate-by-url \
     "url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.ez_i:2008%2C+autos.fuel_s:(cng%2Clpg)+autos.marke_s:volkswagen+autos.shift_s:automatik+autos.typ_s:(kombi%2Csuv)",
     "max_pages": 3
   }'
+```
+
+**Wohnwagen — Fendt, Klima, max 15.000 €, ab 2008:**
+```sh
+curl -X POST http://localhost:8000/inserate-by-url \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://www.kleinanzeigen.de/s-wohnwagen-mobile/wohnwagen/preis::15000/klima/k0c220+wohnwagen_mobile.art_s:wohnwagen+wohnwagen_mobile.ez_i:2008%2C+wohnwagen_mobile.marke_s:fendt",
+    "max_pages": 2
+  }'
+```
+
+**Pretty-print the response with Python:**
+```sh
+curl -s -X POST http://localhost:8000/inserate-by-url \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.marke_s:volkswagen", "max_pages": 1}' \
+  | python -m json.tool
 ```
 
 ##### Example Response
@@ -257,12 +296,29 @@ curl -X POST http://localhost:8000/inserate-by-url \
 }
 ```
 
-##### Example Request
+##### curl Examples
 
+**Basic — category + keyword only:**
+```sh
+curl -X POST http://localhost:8000/convert-url \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.marke_s:volkswagen"}' \
+  | python -m json.tool
+```
+
+**With year filter:**
 ```sh
 curl -X POST http://localhost:8000/convert-url \
   -H "Content-Type: application/json" \
   -d '{"url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.ez_i:2008%2C+autos.marke_s:volkswagen"}' \
+  | python -m json.tool
+```
+
+**With full filters — fuel, transmission, body type:**
+```sh
+curl -X POST http://localhost:8000/convert-url \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.ez_i:2008%2C+autos.fuel_s:(cng%2Clpg)+autos.marke_s:volkswagen+autos.shift_s:automatik+autos.typ_s:(kombi%2Csuv)"}' \
   | python -m json.tool
 ```
 
