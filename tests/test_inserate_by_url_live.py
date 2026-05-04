@@ -14,6 +14,7 @@ sleeping — guaranteeing sequential execution with cooldowns.
 """
 
 import time
+from datetime import datetime
 import pytest
 import httpx
 
@@ -72,6 +73,30 @@ def three_page_response(http_client, two_page_response):
 def four_page_response(http_client, three_page_response):
     time.sleep(COOLDOWN)
     resp = http_client.post("/inserate-by-url", json={"url": LARGE_RESULT_URL, "max_pages": 4})
+    assert resp.status_code == 200, f"HTTP {resp.status_code}: {resp.text[:200]}"
+    return resp.json()
+
+
+@pytest.fixture(scope="session")
+def future_cutoff_response(http_client, four_page_response):
+    """Fetch with a far-future min_publish_date — all listings are older → 0 results, stops after page 1."""
+    time.sleep(COOLDOWN)
+    resp = http_client.post(
+        "/inserate-by-url",
+        json={"url": LARGE_RESULT_URL, "max_pages": 2, "min_publish_date": "2099-01-01T00:00:00"},
+    )
+    assert resp.status_code == 200, f"HTTP {resp.status_code}: {resp.text[:200]}"
+    return resp.json()
+
+
+@pytest.fixture(scope="session")
+def past_cutoff_response(http_client, future_cutoff_response):
+    """Fetch with a far-past min_publish_date — no listing is filtered, result count unchanged."""
+    time.sleep(COOLDOWN)
+    resp = http_client.post(
+        "/inserate-by-url",
+        json={"url": LARGE_RESULT_URL, "max_pages": 1, "min_publish_date": "2000-01-01T00:00:00"},
+    )
     assert resp.status_code == 200, f"HTTP {resp.status_code}: {resp.text[:200]}"
     return resp.json()
 
@@ -168,3 +193,33 @@ def test_four_pages_metrics(four_page_response):
     assert pm["pages_requested"] == 4
     assert pm["pages_successful"] == 4
     assert pm["success_rate"] == 100.0
+
+
+# ── min_publish_date (datetime filtering) ─────────────────────────────────────
+
+def test_future_cutoff_returns_no_results(future_cutoff_response):
+    """A cutoff far in the future filters out every listing."""
+    assert future_cutoff_response["unique_results"] == 0
+    assert future_cutoff_response["results"] == []
+
+
+def test_future_cutoff_stops_after_first_page(future_cutoff_response):
+    """Early-stop fires on page 1 because all listings predate 2099 — no page 2 fetched."""
+    assert future_cutoff_response["performance_metrics"]["pages_requested"] == 1
+
+
+def test_past_cutoff_does_not_filter(past_cutoff_response):
+    """A cutoff far in the past keeps every listing — result count same as no filter."""
+    assert past_cutoff_response["unique_results"] == 25
+    assert len(past_cutoff_response["results"]) == 25
+
+
+def test_published_at_respects_cutoff(four_page_response):
+    """All published_at values in a real response are valid ISO 8601 datetimes."""
+    cutoff = datetime(2000, 1, 1)
+    for item in four_page_response["results"]:
+        pub = item.get("published_at")
+        if pub is not None:
+            assert datetime.fromisoformat(pub) >= cutoff, (
+                f"published_at {pub!r} is older than cutoff {cutoff.isoformat()}"
+            )

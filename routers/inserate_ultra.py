@@ -2,6 +2,9 @@
 Ultra-optimized router for maximum performance scraping.
 """
 
+from datetime import datetime
+from typing import Optional
+
 from fastapi import APIRouter, Query, Request, HTTPException
 from scrapers.inserate_ultra_optimized import ultra_optimized_scrape_inserate
 
@@ -17,6 +20,7 @@ async def get_inserate_ultra_optimized(
     min_price: int = Query(None, description="Minimum price filter"),
     max_price: int = Query(None, description="Maximum price filter"),
     page_count: int = Query(1, ge=1, le=20, description="Number of pages to fetch"),
+    min_publish_date: Optional[datetime] = Query(None, description="Stop fetching once listings published before this datetime (inclusive, format: YYYY-MM-DDTHH:MM:SS)"),
 ):
     """
     Fetch listings based on search criteria.
@@ -39,6 +43,7 @@ async def get_inserate_ultra_optimized(
             min_price=min_price,
             max_price=max_price,
             page_count=page_count,
+            min_publish_date=min_publish_date,
         )
 
         # Clean up response - remove excessive metrics for production

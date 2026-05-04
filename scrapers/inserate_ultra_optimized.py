@@ -33,6 +33,25 @@ from utils.asyncio_optimizations import (
 )
 
 
+def _page_has_old_listings(results: list, min_publish_date: datetime) -> bool:
+    """Return True if any listing on this page was published before min_publish_date."""
+    for r in results:
+        pub = r.get("published_at")
+        if pub and datetime.fromisoformat(pub) < min_publish_date:
+            return True
+    return False
+
+
+def _filter_by_min_publish_date(results: list, min_publish_date: datetime) -> list:
+    """Remove listings published before min_publish_date. Null published_at entries are kept."""
+    out = []
+    for r in results:
+        pub = r.get("published_at")
+        if pub is None or datetime.fromisoformat(pub) >= min_publish_date:
+            out.append(r)
+    return out
+
+
 def _parse_kleinanzeigen_date(text: str) -> Optional[str]:
     """Convert a Kleinanzeigen listing date string to an ISO 8601 datetime string.
 
@@ -324,6 +343,7 @@ class UltraOptimizedScraper:
         min_price: int = None,
         max_price: int = None,
         page_count: int = 1,
+        min_publish_date: datetime = None,
     ) -> Dict[str, Any]:
         """
         Ultra-optimized multi-page scraping with all performance enhancements.
@@ -374,8 +394,12 @@ class UltraOptimizedScraper:
             batch_size = min(8, page_count)  # Optimal batch size based on testing
             all_results = []
             all_metrics = []
+            stop_early = False
 
             for i in range(0, len(page_numbers), batch_size):
+                if stop_early:
+                    break
+
                 batch_pages = page_numbers[i : i + batch_size]
 
                 # Create tasks for this batch
@@ -389,7 +413,6 @@ class UltraOptimizedScraper:
                 # Process batch results
                 for result in batch_results:
                     if isinstance(result, Exception):
-                        # Handle unexpected exceptions
                         logger.log_error(
                             ErrorClassifier.classify_exception(
                                 result,
@@ -400,6 +423,11 @@ class UltraOptimizedScraper:
                         continue
 
                     page_results, page_metrics, _ = result
+
+                    if min_publish_date and _page_has_old_listings(page_results, min_publish_date):
+                        page_results = _filter_by_min_publish_date(page_results, min_publish_date)
+                        stop_early = True
+
                     all_results.extend(page_results)
                     all_metrics.append(page_metrics)
                     tracker.add_page_metric(page_metrics)
@@ -418,10 +446,11 @@ class UltraOptimizedScraper:
             request_metrics = tracker.get_request_metrics()
             task_metrics = self.task_manager.get_metrics()
 
-            # Calculate success statistics
+            # Calculate success statistics against actual pages attempted
+            pages_attempted = len(all_metrics)
             successful_pages = sum(1 for m in all_metrics if m.success)
             success_rate = (
-                (successful_pages / page_count) * 100 if page_count > 0 else 0
+                (successful_pages / pages_attempted) * 100 if pages_attempted > 0 else 0
             )
 
             # Add performance-based warnings
@@ -509,6 +538,7 @@ async def ultra_optimized_scrape_inserate(
     min_price: int = None,
     max_price: int = None,
     page_count: int = 1,
+    min_publish_date: datetime = None,
 ) -> Dict[str, Any]:
     """
     Direct function for ultra-optimized scraping.
@@ -530,6 +560,7 @@ async def ultra_optimized_scrape_inserate(
             min_price=min_price,
             max_price=max_price,
             page_count=page_count,
+            min_publish_date=min_publish_date,
         )
     finally:
         await scraper.cleanup()

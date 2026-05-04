@@ -6,11 +6,16 @@ Reuses UltraOptimizedScraper for fetching/extraction; only the URL-building diff
 import asyncio
 import gc
 import re
+from datetime import datetime
 from typing import Dict, Any, Optional
 
 from utils.browser import OptimizedPlaywrightManager
 from utils.performance import PerformanceTracker
-from scrapers.inserate_ultra_optimized import create_ultra_optimized_scraper
+from scrapers.inserate_ultra_optimized import (
+    create_ultra_optimized_scraper,
+    _page_has_old_listings,
+    _filter_by_min_publish_date,
+)
 
 _TOTAL_RESULTS_SELECTOR = {"breadcrump_summary": ".breadcrump-summary"}
 
@@ -57,8 +62,13 @@ async def scrape_by_url(
     browser_manager: OptimizedPlaywrightManager,
     base_url: str,
     max_pages: int = 1,
+    min_publish_date: datetime = None,
 ) -> Dict[str, Any]:
-    """Scrape up to max_pages pages starting from base_url."""
+    """Scrape up to max_pages pages starting from base_url.
+
+    If min_publish_date is set, stops fetching once a page contains listings
+    older than that date and trims those listings from the final results.
+    """
     scraper = await create_ultra_optimized_scraper(browser_manager)
     tracker = PerformanceTracker()
     tracker.start_request()
@@ -83,11 +93,20 @@ async def scrape_by_url(
                 page_results, page_metrics, extras = result
                 if total_results is None and "breadcrump_summary" in extras:
                     total_results = _parse_total_results(extras["breadcrump_summary"])
+
+                stop = min_publish_date and _page_has_old_listings(page_results, min_publish_date)
+                if min_publish_date:
+                    page_results = _filter_by_min_publish_date(page_results, min_publish_date)
+
                 all_results.extend(page_results)
                 all_metrics.append(page_metrics)
                 tracker.add_page_metric(page_metrics)
+
+                if stop:
+                    break
             gc.collect()
 
+        pages_attempted = len(all_metrics)
         tracker.set_concurrent_level(batch_size)
         browser_metrics = browser_manager.get_performance_metrics()
         tracker.set_browser_contexts_used(
@@ -97,7 +116,7 @@ async def scrape_by_url(
         request_metrics_dict = request_metrics.to_dict()
 
         successful_pages = sum(1 for m in all_metrics if m.success)
-        success_rate = (successful_pages / max_pages) * 100 if max_pages > 0 else 0
+        success_rate = (successful_pages / pages_attempted) * 100 if pages_attempted > 0 else 0
 
         response = {
             "success": True,
@@ -105,7 +124,7 @@ async def scrape_by_url(
             "unique_results": len(all_results),
             "time_taken": round(request_metrics.total_time, 3),
             "performance_metrics": {
-                "pages_requested": max_pages,
+                "pages_requested": pages_attempted,
                 "pages_successful": successful_pages,
                 "success_rate": round(success_rate, 2),
                 "average_page_time": round(request_metrics_dict.get("average_page_time", 0), 3),

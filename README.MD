@@ -124,11 +124,17 @@ The API will be available at `http://localhost:8000`
 - **`min_price`** *(integer, optional)*: The minimum price in Euros for the listings (e.g., `200` for at least 200 Euros).
 - **`max_price`** *(integer, optional)*: The maximum price in Euros for the listings (e.g., `500` for at most 500 Euros).
 - **`page_count`** *(integer, optional)*: The number of pages to search or return (e.g., `5` for the first 5 pages, default is 1, max: 20 pages).
+- **`min_publish_date`** *(datetime, optional)*: Stop fetching once a page contains listings published before this datetime. Listings older than the threshold are removed from the final results. Format: `YYYY-MM-DDTHH:MM:SS` (e.g., `2026-05-03T08:00:00`). Useful for intraday runs that should only collect new listings.
 
-##### Example Request
+##### Example Requests
 
 ```http
 GET /inserate?query=fahrrad&location=10178&radius=5&min_price=200&page_count=5
+```
+
+**With `min_publish_date` — stop when listings older than this morning are reached:**
+```sh
+curl "http://localhost:8000/inserate?query=fahrrad&page_count=10&min_publish_date=2026-05-04T08:00:00"
 ```
 
 #### 2. Fetch Listing Details
@@ -184,6 +190,7 @@ Pages are fetched **sequentially** to avoid IP-level rate limiting by Kleinanzei
 
 - **`url`** *(string, required)*: Any Kleinanzeigen search or category URL.
 - **`max_pages`** *(integer, optional)*: Number of pages to fetch (default: 1). Each page returns up to 25 listings.
+- **`min_publish_date`** *(datetime, optional)*: Stop fetching once a page contains listings published before this datetime. Listings older than the threshold are removed from the final results. Format: `YYYY-MM-DDTHH:MM:SS`. Supports intraday precision — e.g. `"2026-05-04T08:00:00"` keeps only listings from that morning onward.
 
 ##### curl Examples
 
@@ -226,6 +233,54 @@ curl -X POST http://localhost:8000/inserate-by-url \
     "max_pages": 2
   }'
 ```
+
+**With `min_publish_date` — stop once listings older than this morning are found (intraday run):**
+```sh
+curl -s -X POST http://localhost:8000/inserate-by-url \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.marke_s:volkswagen",
+    "max_pages": 20,
+    "min_publish_date": "2026-05-04T08:00:00"
+  }' | python -m json.tool
+```
+Expected: `pages_requested` < 20, all `published_at` values ≥ `"2026-05-04T08:00:00"`.
+
+**Verify early-stop: future cutoff → 0 results, only 1 page fetched:**
+```sh
+curl -s -X POST http://localhost:8000/inserate-by-url \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.marke_s:volkswagen",
+    "max_pages": 5,
+    "min_publish_date": "2099-01-01T00:00:00"
+  }' | python -m json.tool
+```
+Expected: `"unique_results": 0`, `"pages_requested": 1`.
+
+**Verify no false filtering: past cutoff → full 25 results:**
+```sh
+curl -s -X POST http://localhost:8000/inserate-by-url \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.marke_s:volkswagen",
+    "max_pages": 1,
+    "min_publish_date": "2000-01-01T00:00:00"
+  }' | python -m json.tool
+```
+Expected: `"unique_results": 25`.
+
+**Verify schema enforcement: plain date string → HTTP 422:**
+```sh
+curl -s -X POST http://localhost:8000/inserate-by-url \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.marke_s:volkswagen",
+    "max_pages": 1,
+    "min_publish_date": "2026-05-04"
+  }' | python -m json.tool
+```
+Expected: HTTP 422 — the time component is required.
 
 **Pretty-print the response with Python:**
 ```sh
@@ -469,6 +524,25 @@ Distributed under the MIT License. See `LICENSE` for more information.
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Changelog
+
+### May 2026 — Intraday `min_publish_date` precision (datetime)
+
+**Maintainer:** [Darko Palić](https://github.com/dpalic)
+
+#### Changed
+
+- **`min_publish_date` upgraded from `date` to `datetime`** on both `GET /inserate` and `POST /inserate-by-url`. The parameter now accepts a full ISO 8601 datetime string (`YYYY-MM-DDTHH:MM:SS`) instead of a plain date. This enables intraday filtering — e.g. `"2026-05-04T08:00:00"` keeps only listings published from that exact time onward, not just from that calendar day.
+- The internal comparison in `_page_has_old_listings` and `_filter_by_min_publish_date` now operates on full `datetime` objects instead of stripping to `.date()`, preserving hour/minute precision.
+- German date strings (`"Heute, 08:46"`, `"Gestern, 14:29"`) already produced full ISO 8601 datetimes — no parsing changes required.
+
+#### Tests
+
+- 3 new live integration tests in `tests/test_inserate_by_url_live.py` covering `min_publish_date`:
+  - Future cutoff (`2099-01-01T00:00:00`) returns 0 results and stops after page 1.
+  - Past cutoff (`2000-01-01T00:00:00`) does not filter anything — result count unchanged.
+  - All returned `published_at` values satisfy the cutoff when a real intraday threshold is used.
+
+---
 
 ### May 2026 — URL-passthrough scraping, publish date, rate-limit fixes
 

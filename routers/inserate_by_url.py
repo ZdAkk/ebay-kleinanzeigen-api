@@ -1,3 +1,6 @@
+from datetime import datetime
+from typing import Optional
+
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 
@@ -7,6 +10,7 @@ router = APIRouter()
 class InserateByUrlRequest(BaseModel):
     url: str
     max_pages: int = 1
+    min_publish_date: Optional[datetime] = None
 
 
 @router.post("/inserate-by-url")
@@ -29,6 +33,7 @@ async def inserate_by_url(request: Request, body: InserateByUrlRequest):
             browser_manager=browser_manager,
             base_url=body.url,
             max_pages=body.max_pages,
+            min_publish_date=body.min_publish_date,
         )
     except HTTPException:
         raise
