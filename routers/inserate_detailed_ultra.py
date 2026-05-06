@@ -4,6 +4,7 @@ Ultra-optimized combined endpoint for maximum performance.
 
 import asyncio
 import time
+import uuid
 from typing import Dict, Any
 from fastapi import APIRouter, Query, HTTPException, Request
 
@@ -69,6 +70,9 @@ async def get_inserate_with_details(
             }
 
         # Phase 2: Fetch details concurrently with controlled concurrency
+        detail_request_id = f"req-{uuid.uuid4().hex[:8]}"
+        total_listings = len(listings)
+
         async def fetch_single_detail(listing: Dict[str, Any], index: int):
             """Fetch details for a single listing."""
             try:
@@ -77,7 +81,10 @@ async def get_inserate_with_details(
                     return None
 
                 detail_result = await get_inserate_details_optimized(
-                    browser_manager, listing_id
+                    browser_manager,
+                    listing_id,
+                    request_id=detail_request_id,
+                    progress=f"{index + 1}/{total_listings}",
                 )
 
                 if detail_result.get("success", False):

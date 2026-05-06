@@ -1,10 +1,10 @@
 """
-Fetch Wohnwagen listings via POST /inserate-by-url.
+Fetch PKW Zugfahrzeug listings via POST /inserate-by-url.
 
 Usage:
-  python tests/test_wohnwagen.py                                          # 1 page per URL
-  python tests/test_wohnwagen.py --max-pages 3
-  python tests/test_wohnwagen.py --max-pages 10 --min-publish-date 2026-05-04T08:00:00
+  python tests/test_pkw_zugfahrzeug.py                                          # 1 page per URL
+  python tests/test_pkw_zugfahrzeug.py --max-pages 3
+  python tests/test_pkw_zugfahrzeug.py --max-pages 10 --min-publish-date 2026-05-04T08:00:00
 """
 
 import asyncio
@@ -16,7 +16,7 @@ BASE_URL = "http://localhost:8000"
 
 SEARCHES = [
     {
-        "label": "Wohnwagen Luxus & Premium Fendt, Tabbert, Eriba, Klima, max 15.000 €, ab 2008",
+        "label": "Zugfahrzeug Luxus & Premium Fendt, Tabbert, Eriba, Klima, max 15.000 €, ab 2008",
         "url": (
             "https://www.kleinanzeigen.de/s-wohnwagen-mobile/wohnwagen/preis::15000/klima/"
             "k0c220+wohnwagen_mobile.art_s:wohnwagen+wohnwagen_mobile.ez_i:2008%2C"
@@ -71,7 +71,7 @@ async def run_search(
                 return
 
             listings = data.get("results", [])
-            metrics = data.get("performance_metrics", {})
+            metrics  = data.get("performance_metrics", {})
 
             print(f"Total results  : {data.get('total_results', 'N/A')}")
             print(f"Fetched        : {len(listings)}")
@@ -84,7 +84,7 @@ async def run_search(
                 print("\nNo listings returned.")
                 return
 
-            print(f"\n{'─' * 60}")
+            print(f"\n{'─'*60}")
             for i, item in enumerate(listings, 1):
                 price = (item.get("price") or "").strip()
                 print(f"{i:>4}. {item.get('title', 'N/A')}")
@@ -115,7 +115,7 @@ async def main() -> None:
         for search in SEARCHES:
             await run_search(session, search, max_pages, min_publish_date)
 
-    print(f"\n{'=' * 60}\nDone.\n")
+    print(f"\n{'='*60}\nDone.\n")
 
 
 if __name__ == "__main__":

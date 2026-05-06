@@ -127,7 +127,11 @@ async def get_inserate_details(url: str, page):
 
 
 async def get_inserate_details_optimized(
-    browser_manager: OptimizedPlaywrightManager, listing_id: str, retry_count: int = 2
+    browser_manager: OptimizedPlaywrightManager,
+    listing_id: str,
+    retry_count: int = 2,
+    request_id: str = None,
+    progress: str = None,
 ) -> dict:
     """
     Optimized version of get_inserate_details with comprehensive error handling and performance tracking.
@@ -149,6 +153,9 @@ async def get_inserate_details_optimized(
     tracker.start_request()
 
     url = f"https://www.kleinanzeigen.de/s-anzeige/{listing_id}"
+    _rid = f" {request_id}" if request_id else ""
+    _pos = f" {progress}" if progress else ""
+    logger.logger.info(f"[DETAIL{_rid}{_pos}] Fetching ad {listing_id}: {url}")
 
     with error_handling_context(
         operation="fetch_listing_details", listing_id=listing_id, url=url, logger=logger

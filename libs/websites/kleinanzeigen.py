@@ -1,3 +1,4 @@
+import re
 from typing import Dict, List, Optional, Union, Any
 from urllib.parse import urlparse, parse_qs
 from playwright.async_api import Page, ElementHandle
@@ -43,13 +44,44 @@ def parse_price(price_text: Optional[str]) -> Dict[str, Union[str, bool]]:
     return {"amount": amount, "currency": "€", "negotiable": negotiable}
 
 
+def _extract_user_id(href: str) -> Optional[str]:
+    """Extract the numeric Kleinanzeigen user ID from a profile link href.
+
+    Handles two URL patterns:
+      /s-anzeigen-des-nutzers/12345678
+      /s-bestandsliste.html?userId=12345678
+    """
+    m = re.search(r"s-anzeigen-des-nutzers/(\d+)", href)
+    if m:
+        return m.group(1)
+    m = re.search(r"[?&]userId=(\d+)", href)
+    if m:
+        return m.group(1)
+    return None
+
+
 async def get_seller_details(page: Page) -> Dict[str, Optional[str]]:
-    result = {"name": None, "since": None, "type": "private", "badges": []}
+    result = {"name": None, "user_id": None, "since": None, "type": "private", "badges": []}
 
     try:
-        # Get seller name
+        # Get seller name and user ID from the profile link.
+        # .userprofile-vip is typically an <a> whose href encodes the user ID.
         name_selector = ".userprofile-vip"
         result["name"] = await get_element_content(page, name_selector)
+
+        user_id = None
+        for selector in (
+            "a.userprofile-vip",
+            "a[href*='s-anzeigen-des-nutzers']",
+            "a[href*='userId']",
+        ):
+            el = await page.query_selector(selector)
+            if el:
+                href = await el.get_attribute("href") or ""
+                user_id = _extract_user_id(href)
+                if user_id:
+                    break
+        result["user_id"] = user_id
 
         # Get seller type
         type_selector = ".userprofile-vip-details-text:has-text('Privater Nutzer'), .userprofile-vip-details-text:has-text('Gewerblicher Nutzer')"
