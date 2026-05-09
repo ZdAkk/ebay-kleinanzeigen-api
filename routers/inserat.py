@@ -32,6 +32,11 @@ async def get_inserat(
         )
 
         if not response.get("success", False):
+            if response.get("not_found"):
+                raise HTTPException(
+                    status_code=404,
+                    detail={"error": "Ad not found or has been deleted", "status": "deleted"},
+                )
             raise HTTPException(
                 status_code=500, detail="Failed to fetch listing details"
             )

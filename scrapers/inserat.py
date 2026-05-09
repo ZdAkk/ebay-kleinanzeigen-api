@@ -12,11 +12,47 @@ from utils.error_handling import (
     error_handling_context,
 )
 
+_AD_URL_PREFIX = "https://www.kleinanzeigen.de/s-anzeige/"
+
+
+def _deleted_response(url_requested: str, url_redirected: str) -> dict:
+    return {
+        "id": None,
+        "scraped_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "url_requested": url_requested,
+        "url_redirected": url_redirected,
+        "not_found": True,
+        "status": "deleted",
+        "categories": [],
+        "title": None,
+        "price": {"amount": "0", "currency": "€", "negotiable": False},
+        "delivery": None,
+        "location": {"zip": "", "city": "", "state": ""},
+        "media": {
+            "images": {"count": 0, "urls": []},
+            "videos": {"count": 0, "urls": []},
+            "audios": {"count": 0, "urls": []},
+        },
+        "details": {},
+        "features": {},
+        "description": None,
+        "seller": {"name": None, "user_id": None, "since": None, "type": "private", "badges": []},
+        "extra_info": {"created_at": None, "views": "0"},
+    }
+
 
 async def get_inserate_details(url: str, page):
     try:
         await page.goto(url, timeout=120000)
         final_url = page.url
+
+        # Redirect away from the ad URL means the ad is gone
+        if not final_url.startswith(_AD_URL_PREFIX):
+            return _deleted_response(url, final_url)
+
+        # Kleinanzeigen expired-ad page (alternative to redirect)
+        if await page.query_selector("#srchrslt-adexpired"):
+            return _deleted_response(url, final_url)
 
         try:
             await page.wait_for_selector(
@@ -176,6 +212,10 @@ async def get_inserate_details_optimized(
                         # Get listing details using existing function
                         details = await get_inserate_details(url, page)
 
+                        # Ad is gone (redirect or expired page detected)
+                        if details.get("not_found"):
+                            return details
+
                         # Validate the extracted details
                         if not details or not details.get("id"):
                             warning_manager.add_warning(
@@ -208,6 +248,24 @@ async def get_inserate_details_optimized(
                 details = await browser_manager.execute_with_semaphore(
                     fetch_operation()
                 )
+
+                # Ad was not found (redirect or expired page): return not-found response immediately
+                if details.get("not_found"):
+                    browser_metrics = browser_manager.get_performance_metrics()
+                    tracker.set_browser_contexts_used(
+                        browser_metrics["contexts_in_use"]
+                        + browser_metrics["contexts_in_pool"]
+                    )
+                    tracker.set_concurrent_level(1)
+                    request_metrics = tracker.get_request_metrics()
+                    return {
+                        "success": False,
+                        "not_found": True,
+                        "data": details,
+                        "time_taken": round(request_metrics.total_time, 3),
+                        "performance_metrics": request_metrics.to_dict(),
+                        "browser_metrics": browser_metrics,
+                    }
 
                 # Create successful page metric with warning information
                 page_metric = PageMetrics(
