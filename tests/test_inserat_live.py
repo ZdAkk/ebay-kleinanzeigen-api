@@ -24,16 +24,29 @@ SEARCH_URL = (
 )
 
 EXPECTED_DATA_FIELDS = {
-    "id", "url_requested", "url_redirected",
-    "categories", "title", "status", "price",
-    "delivery", "location", "views", "description",
-    "images", "details", "features", "seller", "extra_info",
+    "id",
+    "url_requested",
+    "url_redirected",
+    "categories",
+    "title",
+    "status",
+    "price",
+    "delivery",
+    "location",
+    "views",
+    "description",
+    "images",
+    "details",
+    "features",
+    "seller",
+    "extra_info",
 }
 
 EXPECTED_TOP_FIELDS = {"success", "time_taken", "data", "performance_metrics"}
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture(scope="session")
 def http_client():
@@ -77,6 +90,7 @@ def plain_adid_response(http_client, full_segment_response):
 
 # ── Top-level structure ───────────────────────────────────────────────────────
 
+
 def test_top_level_fields_present(full_segment_response):
     missing = EXPECTED_TOP_FIELDS - full_segment_response.keys()
     assert not missing, f"Missing top-level fields: {missing}"
@@ -93,7 +107,10 @@ def test_data_fields_present(full_segment_response):
 
 # ── url_requested and url_redirected ─────────────────────────────────────────
 
-def test_full_segment_url_requested_matches_input(http_client, listing, full_segment_response):
+
+def test_full_segment_url_requested_matches_input(
+    http_client, listing, full_segment_response
+):
     segment = listing["url"].rstrip("/").split("/")[-1]
     expected = f"https://www.kleinanzeigen.de/s-anzeige/{segment}"
     assert full_segment_response["data"]["url_requested"] == expected
@@ -125,17 +142,25 @@ def test_both_formats_return_same_id(full_segment_response, plain_adid_response)
 
 
 def test_both_formats_return_same_title(full_segment_response, plain_adid_response):
-    assert full_segment_response["data"]["title"] == plain_adid_response["data"]["title"]
+    assert (
+        full_segment_response["data"]["title"] == plain_adid_response["data"]["title"]
+    )
 
 
 # ── Content fields ────────────────────────────────────────────────────────────
+
 
 def test_title_is_non_empty(full_segment_response):
     assert full_segment_response["data"]["title"].strip()
 
 
 def test_status_is_valid(full_segment_response):
-    assert full_segment_response["data"]["status"] in {"active", "sold", "reserved", "deleted"}
+    assert full_segment_response["data"]["status"] in {
+        "active",
+        "sold",
+        "reserved",
+        "deleted",
+    }
 
 
 def test_categories_is_list(full_segment_response):

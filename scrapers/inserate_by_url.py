@@ -35,8 +35,11 @@ def inject_page(url: str, page_num: int) -> str:
     path = unquote(parsed.path)
 
     # Strip any existing page segment
-    segments = [s for s in path.strip("/").split("/")
-                if s and not re.match(r"^s-seite:\d+$", s) and not re.match(r"^seite:\d+$", s)]
+    segments = [
+        s
+        for s in path.strip("/").split("/")
+        if s and not re.match(r"^s-seite:\d+$", s) and not re.match(r"^seite:\d+$", s)
+    ]
 
     if page_num > 1:
         has_filter = any(re.match(r"^k?\d*c\d+", s) for s in segments)
@@ -86,7 +89,8 @@ async def scrape_by_url(
             if page_num > 1:
                 await asyncio.sleep(2)
             result = await scraper.ultra_optimized_fetch_page(
-                inject_page(base_url, page_num), page_num,
+                inject_page(base_url, page_num),
+                page_num,
                 extra_selectors=_TOTAL_RESULTS_SELECTOR if page_num == 1 else None,
             )
             if not isinstance(result, Exception):
@@ -94,9 +98,13 @@ async def scrape_by_url(
                 if total_results is None and "breadcrump_summary" in extras:
                     total_results = _parse_total_results(extras["breadcrump_summary"])
 
-                stop = min_publish_date and _page_has_old_listings(page_results, min_publish_date)
+                stop = min_publish_date and _page_has_old_listings(
+                    page_results, min_publish_date
+                )
                 if min_publish_date:
-                    page_results = _filter_by_min_publish_date(page_results, min_publish_date)
+                    page_results = _filter_by_min_publish_date(
+                        page_results, min_publish_date
+                    )
 
                 all_results.extend(page_results)
                 all_metrics.append(page_metrics)
@@ -116,7 +124,9 @@ async def scrape_by_url(
         request_metrics_dict = request_metrics.to_dict()
 
         successful_pages = sum(1 for m in all_metrics if m.success)
-        success_rate = (successful_pages / pages_attempted) * 100 if pages_attempted > 0 else 0
+        success_rate = (
+            (successful_pages / pages_attempted) * 100 if pages_attempted > 0 else 0
+        )
 
         response = {
             "success": True,
@@ -127,7 +137,9 @@ async def scrape_by_url(
                 "pages_requested": pages_attempted,
                 "pages_successful": successful_pages,
                 "success_rate": round(success_rate, 2),
-                "average_page_time": round(request_metrics_dict.get("average_page_time", 0), 3),
+                "average_page_time": round(
+                    request_metrics_dict.get("average_page_time", 0), 3
+                ),
             },
             "browser_metrics": browser_metrics,
         }

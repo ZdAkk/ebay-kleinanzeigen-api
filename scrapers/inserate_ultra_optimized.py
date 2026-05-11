@@ -72,7 +72,9 @@ def _parse_kleinanzeigen_date(text: str) -> Optional[str]:
         if text.startswith("Gestern,"):
             yesterday = today - timedelta(days=1)
             h, m = map(int, text.split(",", 1)[1].strip().split(":"))
-            return datetime(yesterday.year, yesterday.month, yesterday.day, h, m).isoformat()
+            return datetime(
+                yesterday.year, yesterday.month, yesterday.day, h, m
+            ).isoformat()
         # DD.MM.YYYY
         d, mo, y = text.split(".")
         return datetime(int(y), int(mo), int(d)).isoformat()
@@ -169,9 +171,7 @@ class UltraOptimizedScraper:
             desc_task = self._get_text_content(
                 article, "p.aditem-main--middle--description"
             )
-            date_task = self._get_text_content(
-                article, ".aditem-main--top--right"
-            )
+            date_task = self._get_text_content(article, ".aditem-main--top--right")
 
             title_text, price_text, description_text, date_raw = await asyncio.gather(
                 title_task, price_task, desc_task, date_task, return_exceptions=True
@@ -218,7 +218,10 @@ class UltraOptimizedScraper:
 
     @monitor_slow_coroutines(threshold=2.0)
     async def ultra_optimized_fetch_page(
-        self, url: str, page_num: int, retry_count: int = 2,
+        self,
+        url: str,
+        page_num: int,
+        retry_count: int = 2,
         extra_selectors: Dict[str, str] = None,
     ) -> Tuple[List[Dict], PageMetrics, Dict[str, str]]:
         """
@@ -358,7 +361,9 @@ class UltraOptimizedScraper:
         tracker = PerformanceTracker()
         tracker.start_request()
 
-        with error_handling_context(operation="ultra_multi_page_scrape", logger=logger) as ctx:
+        with error_handling_context(
+            operation="ultra_multi_page_scrape", logger=logger
+        ) as ctx:
             # Build URLs efficiently
             base_url = "https://www.kleinanzeigen.de"
 
@@ -380,7 +385,11 @@ class UltraOptimizedScraper:
                 params["radius"] = radius
 
             param_string = f"?{urlencode(params)}" if params else ""
-            search_url = base_url + search_path.format(price_path=price_path, page='{page}') + param_string
+            search_url = (
+                base_url
+                + search_path.format(price_path=price_path, page="{page}")
+                + param_string
+            )
 
             # Create page fetch tasks
             async def create_page_task(page_num: int):
@@ -424,8 +433,12 @@ class UltraOptimizedScraper:
 
                     page_results, page_metrics, _ = result
 
-                    if min_publish_date and _page_has_old_listings(page_results, min_publish_date):
-                        page_results = _filter_by_min_publish_date(page_results, min_publish_date)
+                    if min_publish_date and _page_has_old_listings(
+                        page_results, min_publish_date
+                    ):
+                        page_results = _filter_by_min_publish_date(
+                            page_results, min_publish_date
+                        )
                         stop_early = True
 
                     all_results.extend(page_results)

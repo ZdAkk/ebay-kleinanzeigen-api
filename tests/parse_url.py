@@ -17,15 +17,18 @@ from urllib.parse import urlparse, parse_qs, unquote
 
 def parse_kleinanzeigen_url(url: str) -> dict:
     parsed = urlparse(url)
-    path    = unquote(parsed.path).strip("/")
-    qs      = parse_qs(parsed.query)
+    path = unquote(parsed.path).strip("/")
+    qs = parse_qs(parsed.query)
 
     result = {}
 
     # ── Query-string params ───────────────────────────────────────────────
-    if "keywords"    in qs: result["query"]    = qs["keywords"][0]
-    if "locationStr" in qs: result["location"] = qs["locationStr"][0]
-    if "radius"      in qs: result["radius"]   = int(qs["radius"][0])
+    if "keywords" in qs:
+        result["query"] = qs["keywords"][0]
+    if "locationStr" in qs:
+        result["location"] = qs["locationStr"][0]
+    if "radius" in qs:
+        result["radius"] = int(qs["radius"][0])
 
     # ── Path segments ─────────────────────────────────────────────────────
     segments = path.split("/")
@@ -33,7 +36,6 @@ def parse_kleinanzeigen_url(url: str) -> dict:
     filter_segment = None
 
     for i, seg in enumerate(segments):
-
         # Page — seite:2
         if seg.startswith("seite:"):
             result["page"] = int(seg.split(":")[1])
@@ -49,8 +51,10 @@ def parse_kleinanzeigen_url(url: str) -> dict:
         # Price range — preis:1000:15000
         elif seg.startswith("preis:"):
             parts = seg.split(":")
-            if parts[1]: result["min_price"] = int(parts[1])
-            if parts[2]: result["max_price"] = int(parts[2])
+            if parts[1]:
+                result["min_price"] = int(parts[1])
+            if parts[2]:
+                result["max_price"] = int(parts[2])
 
         # Filter segment — c220+... or k0c220+...
         elif re.match(r"^k?\d*c\d+", seg):
@@ -86,7 +90,7 @@ def parse_kleinanzeigen_url(url: str) -> dict:
                 if year_str:
                     result["year_from"] = int(year_str)
                 if value.endswith(","):
-                    result["year_to"] = None   # open-ended
+                    result["year_to"] = None  # open-ended
 
             # Article type — *.art_s:wohnwagen
             elif key.endswith(".art_s"):
@@ -111,7 +115,7 @@ def main():
         print("Usage: python tests/parse_url.py <kleinanzeigen-url>")
         sys.exit(1)
 
-    url    = sys.argv[1]
+    url = sys.argv[1]
     result = parse_kleinanzeigen_url(url)
 
     print(json.dumps(result, indent=2, ensure_ascii=False))

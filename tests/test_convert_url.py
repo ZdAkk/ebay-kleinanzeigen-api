@@ -5,7 +5,6 @@ Run with:
   pytest tests/test_convert_url.py -v
 """
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from routers.convert_url import router
@@ -22,6 +21,7 @@ def post(url: str) -> dict:
 
 
 # ── Basic category URL (no keyword, no price) ────────────────────────────────
+
 
 def test_category_only():
     data = post(
@@ -41,6 +41,7 @@ def test_category_only():
 
 
 # ── Full URL: keyword, price range, brands, year ─────────────────────────────
+
 
 def test_full_url():
     data = post(
@@ -65,6 +66,7 @@ def test_full_url():
 
 # ── Query-string keyword + location + radius ─────────────────────────────────
 
+
 def test_querystring_params():
     data = post(
         "https://www.kleinanzeigen.de/s-anzeige:angebote"
@@ -78,22 +80,21 @@ def test_querystring_params():
 
 # ── Pagination ────────────────────────────────────────────────────────────────
 
+
 def test_page_number():
     data = post(
-        "https://www.kleinanzeigen.de/s-wohnwagen-mobile/wohnwagen/"
-        "seite:3/c220"
+        "https://www.kleinanzeigen.de/s-wohnwagen-mobile/wohnwagen/seite:3/c220"
     )
     assert data["inserate_params"]["page_count"] == 3
 
 
 def test_s_seite_page():
-    data = post(
-        "https://www.kleinanzeigen.de/s-wohnwagen-mobile/s-seite:4/c220"
-    )
+    data = post("https://www.kleinanzeigen.de/s-wohnwagen-mobile/s-seite:4/c220")
     assert data["inserate_params"]["page_count"] == 4
 
 
 # ── Single brand ─────────────────────────────────────────────────────────────
+
 
 def test_single_brand():
     data = post(
@@ -105,6 +106,7 @@ def test_single_brand():
 
 # ── Missing / empty URL ───────────────────────────────────────────────────────
 
+
 def test_empty_url_returns_defaults():
     data = post("")
     assert data["inserate_params"]["page_count"] == 1
@@ -113,16 +115,26 @@ def test_empty_url_returns_defaults():
 
 # ── Unmapped keys are NOT in inserate_params ─────────────────────────────────
 
+
 def test_category_keys_not_in_inserate_params():
     data = post(
         "https://www.kleinanzeigen.de/s-wohnwagen-mobile/wohnwagen/"
         "c220+wohnwagen_mobile.art_s:wohnwagen"
     )
-    for key in ("category_slug", "subcategory", "category_id", "art", "brands", "year_from", "year_to"):
+    for key in (
+        "category_slug",
+        "subcategory",
+        "category_id",
+        "art",
+        "brands",
+        "year_from",
+        "year_to",
+    ):
         assert key not in data["inserate_params"]
 
 
 # ── Autos URLs ────────────────────────────────────────────────────────────────
+
 
 def test_autos_category_only():
     # "klima" lands at path position 1 → parsed as subcategory, not path_keyword

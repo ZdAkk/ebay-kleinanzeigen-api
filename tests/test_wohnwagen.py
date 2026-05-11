@@ -33,11 +33,13 @@ SEARCHES = [
 ]
 
 
-async def run_search(session: aiohttp.ClientSession, search: dict, max_pages: int) -> None:
-    print(f"\n{'='*60}")
+async def run_search(
+    session: aiohttp.ClientSession, search: dict, max_pages: int
+) -> None:
+    print(f"\n{'=' * 60}")
     print(f"Search: {search['label']}")
     print(f"URL:    {search['url']}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     payload = {"url": search["url"], "max_pages": max_pages}
 
@@ -61,7 +63,7 @@ async def run_search(session: aiohttp.ClientSession, search: dict, max_pages: in
                 return
 
             listings = data.get("results", [])
-            metrics  = data.get("performance_metrics", {})
+            metrics = data.get("performance_metrics", {})
 
             print(f"Total results  : {data.get('total_results', 'N/A')}")
             print(f"Fetched        : {len(listings)}")
@@ -74,7 +76,7 @@ async def run_search(session: aiohttp.ClientSession, search: dict, max_pages: in
                 print("\nNo listings returned.")
                 return
 
-            print(f"\n{'─'*60}")
+            print(f"\n{'─' * 60}")
             for i, item in enumerate(listings, 1):
                 price = (item.get("price") or "").strip()
                 print(f"{i:>4}. {item.get('title', 'N/A')}")
@@ -99,7 +101,7 @@ async def main() -> None:
         for search in SEARCHES:
             await run_search(session, search, max_pages)
 
-    print(f"\n{'='*60}\nDone.\n")
+    print(f"\n{'=' * 60}\nDone.\n")
 
 
 if __name__ == "__main__":

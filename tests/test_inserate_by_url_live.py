@@ -26,15 +26,34 @@ LARGE_RESULT_URL = (
     "k0c216+autos.marke_s:volkswagen"
 )
 
-EXPECTED_RESULT_FIELDS   = {"adid", "url", "title", "price", "description", "published_at"}
-EXPECTED_METRICS_FIELDS  = {"pages_requested", "pages_successful", "success_rate", "average_page_time"}
-EXPECTED_TOP_FIELDS      = {"success", "results", "unique_results", "time_taken",
-                            "total_results", "performance_metrics"}
+EXPECTED_RESULT_FIELDS = {
+    "adid",
+    "url",
+    "title",
+    "price",
+    "description",
+    "published_at",
+}
+EXPECTED_METRICS_FIELDS = {
+    "pages_requested",
+    "pages_successful",
+    "success_rate",
+    "average_page_time",
+}
+EXPECTED_TOP_FIELDS = {
+    "success",
+    "results",
+    "unique_results",
+    "time_taken",
+    "total_results",
+    "performance_metrics",
+}
 
 COOLDOWN = 5  # seconds between requests to avoid rate limiting
 
 
 # ── Fixtures — fetch once, reuse across all tests ─────────────────────────────
+
 
 @pytest.fixture(scope="session")
 def http_client():
@@ -48,7 +67,9 @@ def http_client():
 
 @pytest.fixture(scope="session")
 def single_page_response(http_client):
-    resp = http_client.post("/inserate-by-url", json={"url": LARGE_RESULT_URL, "max_pages": 1})
+    resp = http_client.post(
+        "/inserate-by-url", json={"url": LARGE_RESULT_URL, "max_pages": 1}
+    )
     assert resp.status_code == 200, f"HTTP {resp.status_code}: {resp.text[:200]}"
     return resp.json()
 
@@ -56,7 +77,9 @@ def single_page_response(http_client):
 @pytest.fixture(scope="session")
 def two_page_response(http_client, single_page_response):
     time.sleep(COOLDOWN)
-    resp = http_client.post("/inserate-by-url", json={"url": LARGE_RESULT_URL, "max_pages": 2})
+    resp = http_client.post(
+        "/inserate-by-url", json={"url": LARGE_RESULT_URL, "max_pages": 2}
+    )
     assert resp.status_code == 200, f"HTTP {resp.status_code}: {resp.text[:200]}"
     return resp.json()
 
@@ -64,7 +87,9 @@ def two_page_response(http_client, single_page_response):
 @pytest.fixture(scope="session")
 def three_page_response(http_client, two_page_response):
     time.sleep(COOLDOWN)
-    resp = http_client.post("/inserate-by-url", json={"url": LARGE_RESULT_URL, "max_pages": 3})
+    resp = http_client.post(
+        "/inserate-by-url", json={"url": LARGE_RESULT_URL, "max_pages": 3}
+    )
     assert resp.status_code == 200, f"HTTP {resp.status_code}: {resp.text[:200]}"
     return resp.json()
 
@@ -72,7 +97,9 @@ def three_page_response(http_client, two_page_response):
 @pytest.fixture(scope="session")
 def four_page_response(http_client, three_page_response):
     time.sleep(COOLDOWN)
-    resp = http_client.post("/inserate-by-url", json={"url": LARGE_RESULT_URL, "max_pages": 4})
+    resp = http_client.post(
+        "/inserate-by-url", json={"url": LARGE_RESULT_URL, "max_pages": 4}
+    )
     assert resp.status_code == 200, f"HTTP {resp.status_code}: {resp.text[:200]}"
     return resp.json()
 
@@ -83,7 +110,11 @@ def future_cutoff_response(http_client, four_page_response):
     time.sleep(COOLDOWN)
     resp = http_client.post(
         "/inserate-by-url",
-        json={"url": LARGE_RESULT_URL, "max_pages": 2, "min_publish_date": "2099-01-01T00:00:00"},
+        json={
+            "url": LARGE_RESULT_URL,
+            "max_pages": 2,
+            "min_publish_date": "2099-01-01T00:00:00",
+        },
     )
     assert resp.status_code == 200, f"HTTP {resp.status_code}: {resp.text[:200]}"
     return resp.json()
@@ -95,13 +126,18 @@ def past_cutoff_response(http_client, future_cutoff_response):
     time.sleep(COOLDOWN)
     resp = http_client.post(
         "/inserate-by-url",
-        json={"url": LARGE_RESULT_URL, "max_pages": 1, "min_publish_date": "2000-01-01T00:00:00"},
+        json={
+            "url": LARGE_RESULT_URL,
+            "max_pages": 1,
+            "min_publish_date": "2000-01-01T00:00:00",
+        },
     )
     assert resp.status_code == 200, f"HTTP {resp.status_code}: {resp.text[:200]}"
     return resp.json()
 
 
 # ── JSON structure ────────────────────────────────────────────────────────────
+
 
 def test_top_level_fields_present(single_page_response):
     missing = EXPECTED_TOP_FIELDS - single_page_response.keys()
@@ -126,8 +162,11 @@ def test_success_flag_is_true(single_page_response):
 
 # ── total_results ─────────────────────────────────────────────────────────────
 
+
 def test_total_results_present(single_page_response):
-    assert "total_results" in single_page_response, "total_results field missing from response"
+    assert "total_results" in single_page_response, (
+        "total_results field missing from response"
+    )
 
 
 def test_total_results_exceeds_100k(single_page_response):
@@ -136,6 +175,7 @@ def test_total_results_exceeds_100k(single_page_response):
 
 
 # ── Result counts per page ────────────────────────────────────────────────────
+
 
 def test_single_page_returns_25_results(single_page_response):
     assert single_page_response["unique_results"] == 25, (
@@ -167,6 +207,7 @@ def test_four_pages_returns_100_results(four_page_response):
 
 # ── Metrics per page count ────────────────────────────────────────────────────
 
+
 def test_single_page_metrics(single_page_response):
     pm = single_page_response["performance_metrics"]
     assert pm["pages_requested"] == 1
@@ -196,6 +237,7 @@ def test_four_pages_metrics(four_page_response):
 
 
 # ── min_publish_date (datetime filtering) ─────────────────────────────────────
+
 
 def test_future_cutoff_returns_no_results(future_cutoff_response):
     """A cutoff far in the future filters out every listing."""
