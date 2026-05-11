@@ -9,8 +9,9 @@ import asyncio
 import time
 import random
 import gc
+from datetime import datetime, date, timedelta
 from urllib.parse import urlencode
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Optional, Tuple
 
 from fastapi import HTTPException
 
@@ -30,6 +31,53 @@ from utils.asyncio_optimizations import (
     EventLoopOptimizer,
     monitor_slow_coroutines,
 )
+
+
+def _page_has_old_listings(results: list, min_publish_date: datetime) -> bool:
+    """Return True if any listing on this page was published before min_publish_date."""
+    for r in results:
+        pub = r.get("published_at")
+        if pub and datetime.fromisoformat(pub) < min_publish_date:
+            return True
+    return False
+
+
+def _filter_by_min_publish_date(results: list, min_publish_date: datetime) -> list:
+    """Remove listings published before min_publish_date. Null published_at entries are kept."""
+    out = []
+    for r in results:
+        pub = r.get("published_at")
+        if pub is None or datetime.fromisoformat(pub) >= min_publish_date:
+            out.append(r)
+    return out
+
+
+def _parse_kleinanzeigen_date(text: str) -> Optional[str]:
+    """Convert a Kleinanzeigen listing date string to an ISO 8601 datetime string.
+
+    Handles three formats:
+      'Heute, 22:06'   → today's date at that time
+      'Gestern, 19:30' → yesterday's date at that time
+      '26.04.2026'     → that date at midnight (no time shown for older listings)
+    Returns None if the text is empty or unparseable.
+    """
+    text = text.strip()
+    if not text:
+        return None
+    try:
+        today = date.today()
+        if text.startswith("Heute,"):
+            h, m = map(int, text.split(",", 1)[1].strip().split(":"))
+            return datetime(today.year, today.month, today.day, h, m).isoformat()
+        if text.startswith("Gestern,"):
+            yesterday = today - timedelta(days=1)
+            h, m = map(int, text.split(",", 1)[1].strip().split(":"))
+            return datetime(yesterday.year, yesterday.month, yesterday.day, h, m).isoformat()
+        # DD.MM.YYYY
+        d, mo, y = text.split(".")
+        return datetime(int(y), int(mo), int(d)).isoformat()
+    except Exception:
+        return None
 
 
 class UltraOptimizedScraper:
@@ -121,9 +169,12 @@ class UltraOptimizedScraper:
             desc_task = self._get_text_content(
                 article, "p.aditem-main--middle--description"
             )
+            date_task = self._get_text_content(
+                article, ".aditem-main--top--right"
+            )
 
-            title_text, price_text, description_text = await asyncio.gather(
-                title_task, price_task, desc_task, return_exceptions=True
+            title_text, price_text, description_text, date_raw = await asyncio.gather(
+                title_task, price_task, desc_task, date_task, return_exceptions=True
             )
 
             # Process price text efficiently
@@ -137,6 +188,10 @@ class UltraOptimizedScraper:
             else:
                 price_text = ""
 
+            published_at = _parse_kleinanzeigen_date(
+                date_raw if isinstance(date_raw, str) else ""
+            )
+
             return {
                 "adid": data_adid,
                 "url": f"https://www.kleinanzeigen.de{data_href}",
@@ -145,6 +200,7 @@ class UltraOptimizedScraper:
                 "description": description_text
                 if isinstance(description_text, str)
                 else "",
+                "published_at": published_at,
             }
 
         except Exception:
@@ -162,8 +218,9 @@ class UltraOptimizedScraper:
 
     @monitor_slow_coroutines(threshold=2.0)
     async def ultra_optimized_fetch_page(
-        self, url: str, page_num: int, retry_count: int = 2
-    ) -> Tuple[List[Dict], PageMetrics]:
+        self, url: str, page_num: int, retry_count: int = 2,
+        extra_selectors: Dict[str, str] = None,
+    ) -> Tuple[List[Dict], PageMetrics, Dict[str, str]]:
         """
         Ultra-optimized page fetching with all performance enhancements.
 
@@ -205,6 +262,17 @@ class UltraOptimizedScraper:
                     # Extract ads with optimized method
                     results = await self.extract_ads_optimized(page)
 
+                    # Extract any caller-requested selectors from the same page
+                    extras: Dict[str, str] = {}
+                    if extra_selectors:
+                        for key, selector in extra_selectors.items():
+                            try:
+                                el = await page.query_selector(selector)
+                                if el:
+                                    extras[key] = await el.inner_text()
+                            except Exception:
+                                pass
+
                     # Create successful metrics
                     metrics = PageMetrics(
                         page_number=page_num,
@@ -216,7 +284,7 @@ class UltraOptimizedScraper:
                         results_count=len(results),
                     )
 
-                    return results, metrics
+                    return results, metrics, extras
 
                 except Exception as e:
                     last_error = e
@@ -265,7 +333,7 @@ class UltraOptimizedScraper:
                 results_count=0,
             )
 
-            return [], metrics
+            return [], metrics, {}
 
     async def ultra_optimized_scrape(
         self,
@@ -275,6 +343,7 @@ class UltraOptimizedScraper:
         min_price: int = None,
         max_price: int = None,
         page_count: int = 1,
+        min_publish_date: datetime = None,
     ) -> Dict[str, Any]:
         """
         Ultra-optimized multi-page scraping with all performance enhancements.
@@ -325,8 +394,12 @@ class UltraOptimizedScraper:
             batch_size = min(8, page_count)  # Optimal batch size based on testing
             all_results = []
             all_metrics = []
+            stop_early = False
 
             for i in range(0, len(page_numbers), batch_size):
+                if stop_early:
+                    break
+
                 batch_pages = page_numbers[i : i + batch_size]
 
                 # Create tasks for this batch
@@ -340,7 +413,6 @@ class UltraOptimizedScraper:
                 # Process batch results
                 for result in batch_results:
                     if isinstance(result, Exception):
-                        # Handle unexpected exceptions
                         logger.log_error(
                             ErrorClassifier.classify_exception(
                                 result,
@@ -350,7 +422,12 @@ class UltraOptimizedScraper:
                         )
                         continue
 
-                    page_results, page_metrics = result
+                    page_results, page_metrics, _ = result
+
+                    if min_publish_date and _page_has_old_listings(page_results, min_publish_date):
+                        page_results = _filter_by_min_publish_date(page_results, min_publish_date)
+                        stop_early = True
+
                     all_results.extend(page_results)
                     all_metrics.append(page_metrics)
                     tracker.add_page_metric(page_metrics)
@@ -369,10 +446,11 @@ class UltraOptimizedScraper:
             request_metrics = tracker.get_request_metrics()
             task_metrics = self.task_manager.get_metrics()
 
-            # Calculate success statistics
+            # Calculate success statistics against actual pages attempted
+            pages_attempted = len(all_metrics)
             successful_pages = sum(1 for m in all_metrics if m.success)
             success_rate = (
-                (successful_pages / page_count) * 100 if page_count > 0 else 0
+                (successful_pages / pages_attempted) * 100 if pages_attempted > 0 else 0
             )
 
             # Add performance-based warnings
@@ -460,6 +538,7 @@ async def ultra_optimized_scrape_inserate(
     min_price: int = None,
     max_price: int = None,
     page_count: int = 1,
+    min_publish_date: datetime = None,
 ) -> Dict[str, Any]:
     """
     Direct function for ultra-optimized scraping.
@@ -481,6 +560,7 @@ async def ultra_optimized_scrape_inserate(
             min_price=min_price,
             max_price=max_price,
             page_count=page_count,
+            min_publish_date=min_publish_date,
         )
     finally:
         await scraper.cleanup()

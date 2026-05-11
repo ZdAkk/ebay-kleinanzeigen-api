@@ -81,9 +81,11 @@ class OptimizedPlaywrightManager:
             if context in self._context_in_use:
                 self._context_in_use.remove(context)
 
-                # Close all pages in the context to clean it up
+                # Close all pages and clear session state so reused contexts
+                # don't carry Kleinanzeigen tracking cookies into the next request
                 for page in context.pages:
                     await page.close()
+                await context.clear_cookies()
 
                 # Add back to pool if under limit, otherwise close it
                 if len(self._context_pool) < self._max_contexts // 2:

@@ -60,6 +60,14 @@ uvicorn main:app --reload
 
 The API will be available at `http://localhost:8000`
 
+#### Non-headless mode (visible browser)
+
+Set the `HEADLESS` environment variable to `false` to watch the browser while scraping — useful during development:
+
+```sh
+HEADLESS=false uvicorn main:app --reload
+```
+
 ### Installation using UV
 
 #### Prerequisites
@@ -76,6 +84,12 @@ uv sync
 
 ```sh
 uv run uvicorn main:app --reload
+```
+
+#### Non-headless mode with UV
+
+```sh
+HEADLESS=false uv run uvicorn main:app --reload
 ```
 
 ### Installation using Docker
@@ -110,11 +124,17 @@ The API will be available at `http://localhost:8000`
 - **`min_price`** *(integer, optional)*: The minimum price in Euros for the listings (e.g., `200` for at least 200 Euros).
 - **`max_price`** *(integer, optional)*: The maximum price in Euros for the listings (e.g., `500` for at most 500 Euros).
 - **`page_count`** *(integer, optional)*: The number of pages to search or return (e.g., `5` for the first 5 pages, default is 1, max: 20 pages).
+- **`min_publish_date`** *(datetime, optional)*: Stop fetching once a page contains listings published before this datetime. Listings older than the threshold are removed from the final results. Format: `YYYY-MM-DDTHH:MM:SS` (e.g., `2026-05-03T08:00:00`). Useful for intraday runs that should only collect new listings.
 
-##### Example Request
+##### Example Requests
 
 ```http
 GET /inserate?query=fahrrad&location=10178&radius=5&min_price=200&page_count=5
+```
+
+**With `min_publish_date` — stop when listings older than this morning are reached:**
+```sh
+curl "http://localhost:8000/inserate?query=fahrrad&page_count=10&min_publish_date=2026-05-04T08:00:00"
 ```
 
 #### 2. Fetch Listing Details
@@ -151,53 +171,307 @@ Same as `/inserate` endpoint, plus:
 GET /inserate-detailed?query=laptop&page_count=2&max_concurrent_details=5
 ```
 
+#### 4. Scrape by URL
+
+**Endpoint:** `POST /inserate-by-url`
+
+**Description:** Scrape listings using a full Kleinanzeigen search URL. All filters already encoded in the URL (category, brand, year, fuel type, transmission, car type, etc.) are preserved as-is. Page numbers are injected automatically for multi-page fetching. Use this when `/inserate` does not yet support a filter you need.
+
+Pages are fetched **sequentially** to avoid IP-level rate limiting by Kleinanzeigen.
+
+##### Request Body
+
+```json
+{
+  "url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.marke_s:volkswagen",
+  "max_pages": 3
+}
+```
+
+- **`url`** *(string, required)*: Any Kleinanzeigen search or category URL.
+- **`max_pages`** *(integer, optional)*: Number of pages to fetch (default: 1). Each page returns up to 25 listings.
+- **`min_publish_date`** *(datetime, optional)*: Stop fetching once a page contains listings published before this datetime. Listings older than the threshold are removed from the final results. Format: `YYYY-MM-DDTHH:MM:SS`. Supports intraday precision — e.g. `"2026-05-04T08:00:00"` keeps only listings from that morning onward.
+
+##### curl Examples
+
+**Single page — VW with Klima (25 results):**
+```sh
+curl -X POST http://localhost:8000/inserate-by-url \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.marke_s:volkswagen",
+    "max_pages": 1
+  }'
+```
+
+**3 pages — VW with Klima (up to 75 results):**
+```sh
+curl -X POST http://localhost:8000/inserate-by-url \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.marke_s:volkswagen",
+    "max_pages": 3
+  }'
+```
+
+**With full filters — VW Kombi/SUV, Automatik, CNG/LPG, ab 2008, 3 pages:**
+```sh
+curl -X POST http://localhost:8000/inserate-by-url \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.ez_i:2008%2C+autos.fuel_s:(cng%2Clpg)+autos.marke_s:volkswagen+autos.shift_s:automatik+autos.typ_s:(kombi%2Csuv)",
+    "max_pages": 3
+  }'
+```
+
+**Wohnwagen — Fendt, Klima, max 15.000 €, ab 2008:**
+```sh
+curl -X POST http://localhost:8000/inserate-by-url \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://www.kleinanzeigen.de/s-wohnwagen-mobile/wohnwagen/preis::15000/klima/k0c220+wohnwagen_mobile.art_s:wohnwagen+wohnwagen_mobile.ez_i:2008%2C+wohnwagen_mobile.marke_s:fendt",
+    "max_pages": 2
+  }'
+```
+
+**With `min_publish_date` — stop once listings older than this morning are found (intraday run):**
+```sh
+curl -s -X POST http://localhost:8000/inserate-by-url \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.marke_s:volkswagen",
+    "max_pages": 20,
+    "min_publish_date": "2026-05-04T08:00:00"
+  }' | python -m json.tool
+```
+Expected: `pages_requested` < 20, all `published_at` values ≥ `"2026-05-04T08:00:00"`.
+
+**Verify early-stop: future cutoff → 0 results, only 1 page fetched:**
+```sh
+curl -s -X POST http://localhost:8000/inserate-by-url \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.marke_s:volkswagen",
+    "max_pages": 5,
+    "min_publish_date": "2099-01-01T00:00:00"
+  }' | python -m json.tool
+```
+Expected: `"unique_results": 0`, `"pages_requested": 1`.
+
+**Verify no false filtering: past cutoff → full 25 results:**
+```sh
+curl -s -X POST http://localhost:8000/inserate-by-url \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.marke_s:volkswagen",
+    "max_pages": 1,
+    "min_publish_date": "2000-01-01T00:00:00"
+  }' | python -m json.tool
+```
+Expected: `"unique_results": 25`.
+
+**Verify schema enforcement: plain date string → HTTP 422:**
+```sh
+curl -s -X POST http://localhost:8000/inserate-by-url \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.marke_s:volkswagen",
+    "max_pages": 1,
+    "min_publish_date": "2026-05-04"
+  }' | python -m json.tool
+```
+Expected: HTTP 422 — the time component is required.
+
+**Pretty-print the response with Python:**
+```sh
+curl -s -X POST http://localhost:8000/inserate-by-url \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.marke_s:volkswagen", "max_pages": 1}' \
+  | python -m json.tool
+```
+
+##### Example Response
+
+```json
+{
+  "success": true,
+  "results": [
+    {
+      "adid": "3398033022",
+      "url": "https://www.kleinanzeigen.de/s-anzeige/...",
+      "title": "VW Golf Variant 2.0 TDI Automatik Klima",
+      "price": "12500",
+      "description": "Gepflegter Zustand, Erstbesitz...",
+      "published_at": "2026-05-03T22:06:00"
+    }
+  ],
+  "unique_results": 75,
+  "total_results": 120140,
+  "time_taken": 12.358,
+  "performance_metrics": {
+    "pages_requested": 3,
+    "pages_successful": 3,
+    "success_rate": 100.0,
+    "average_page_time": 4.119
+  },
+  "browser_metrics": {
+    "contexts_created": 3,
+    "contexts_reused": 0,
+    "contexts_in_pool": 3,
+    "contexts_in_use": 0
+  }
+}
+```
+
+**Response fields:**
+
+- **`results`**: Array of listing objects. Each listing contains:
+  - `adid` — Kleinanzeigen internal listing ID
+  - `url` — Direct link to the listing
+  - `title` — Listing title
+  - `price` — Price as string (numeric digits only, no currency symbol; empty string if not set)
+  - `description` — Short teaser text from the listing card
+  - `published_at` — ISO 8601 publish datetime (e.g. `"2026-05-03T22:06:00"`). Older listings show only the date at midnight (`"2026-04-26T00:00:00"`). `null` if not shown on the card.
+- **`unique_results`**: Total number of listings returned across all fetched pages.
+- **`total_results`**: Total hits reported by Kleinanzeigen for this search (e.g. `120140`). Extracted from the page breadcrumb on the first page load — no extra request needed.
+- **`time_taken`**: Total elapsed time in seconds.
+- **`performance_metrics.pages_requested`** / **`pages_successful`** / **`success_rate`**: Page-level fetch statistics.
+
+#### 5. Convert URL to API Parameters
+
+**Endpoint:** `POST /convert-url`
+
+**Description:** Parses a Kleinanzeigen URL and returns two groups of parameters: `inserate_params` (what the `/inserate` endpoint currently understands) and `unmapped` (filters not yet supported by `/inserate`, such as category, brand, year, or transmission). Useful for inspecting which parts of a URL can be expressed via the structured API.
+
+##### Request Body
+
+```json
+{
+  "url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.marke_s:volkswagen"
+}
+```
+
+##### curl Examples
+
+**Basic — category + keyword only:**
+```sh
+curl -X POST http://localhost:8000/convert-url \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.marke_s:volkswagen"}' \
+  | python -m json.tool
+```
+
+**With year filter:**
+```sh
+curl -X POST http://localhost:8000/convert-url \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.ez_i:2008%2C+autos.marke_s:volkswagen"}' \
+  | python -m json.tool
+```
+
+**With full filters — fuel, transmission, body type:**
+```sh
+curl -X POST http://localhost:8000/convert-url \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://www.kleinanzeigen.de/s-autos/volkswagen/klima/k0c216+autos.ez_i:2008%2C+autos.fuel_s:(cng%2Clpg)+autos.marke_s:volkswagen+autos.shift_s:automatik+autos.typ_s:(kombi%2Csuv)"}' \
+  | python -m json.tool
+```
+
+##### Example Response
+
+```json
+{
+  "inserate_params": {
+    "query": "klima",
+    "page_count": 1
+  },
+  "unmapped": {
+    "category_slug": "s-autos",
+    "subcategory": "volkswagen",
+    "category_id": 216,
+    "year_from": 2008,
+    "year_to": null,
+    "brands": ["volkswagen"]
+  }
+}
+```
+
 ### Documentation
 
 #### API Response Format
 
-All API endpoints return responses in the following JSON format:
-
-##### API Response Format
+##### `GET /inserate` and `GET /inserate-detailed`
 
 ```json
 {
   "success": true,
   "time_taken": 1.23,
-  "unique_results": 100,
-  "data": [...],
-  "performance_metrics": {
-    "pages_requested": 5,
-    "pages_successful": 5,
-    "success_rate": 100.0,
-    "average_page_time": 2.45
-  }
-}
-```
-
-##### Combined Endpoint Response Format
-
-```json
-{
-  "success": true,
-  "time_taken": 3.45,
   "unique_results": 25,
   "data": [
     {
       "adid": "123456",
+      "url": "https://www.kleinanzeigen.de/s-anzeige/...",
       "title": "Example Item",
       "price": "100",
-      "details": {
-        "id": "123456",
-        "description": "Full description...",
-        "seller": {...},
-        "location": {...}
-      }
+      "description": "Short teaser text..."
     }
   ],
   "performance_metrics": {
-    "listings_found": 25,
-    "details_fetched": 25,
-    "success_rate": 100.0
+    "pages_requested": 1,
+    "pages_successful": 1,
+    "success_rate": 100.0,
+    "average_page_time": 1.23
+  }
+}
+```
+
+The `/inserate-detailed` response additionally nests a `details` object inside each listing with full description, seller info, and location.
+
+##### `POST /inserate-by-url`
+
+```json
+{
+  "success": true,
+  "results": [
+    {
+      "adid": "123456",
+      "url": "https://www.kleinanzeigen.de/s-anzeige/...",
+      "title": "Example Item",
+      "price": "100",
+      "description": "Short teaser text...",
+      "published_at": "2026-05-03T22:06:00"
+    }
+  ],
+  "unique_results": 75,
+  "total_results": 120140,
+  "time_taken": 12.358,
+  "performance_metrics": {
+    "pages_requested": 3,
+    "pages_successful": 3,
+    "success_rate": 100.0,
+    "average_page_time": 4.119
+  },
+  "browser_metrics": { ... }
+}
+```
+
+`total_results` is the total hit count shown by Kleinanzeigen (e.g. `120140`). It is extracted from the breadcrumb of the first page — no extra request is made. The field is omitted if the breadcrumb is not found.
+
+##### `POST /convert-url`
+
+```json
+{
+  "inserate_params": {
+    "query": "klima",
+    "page_count": 1
+  },
+  "unmapped": {
+    "category_slug": "s-autos",
+    "subcategory": "volkswagen",
+    "category_id": 216,
+    "year_from": 2008,
+    "year_to": null,
+    "brands": ["volkswagen"]
   }
 }
 ```
@@ -248,3 +522,47 @@ API documentation is available at `http://localhost:8000/docs` when running loca
 Distributed under the MIT License. See `LICENSE` for more information.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Changelog
+
+### May 2026 — Intraday `min_publish_date` precision (datetime)
+
+**Maintainer:** [Darko Palić](https://github.com/dpalic)
+
+#### Changed
+
+- **`min_publish_date` upgraded from `date` to `datetime`** on both `GET /inserate` and `POST /inserate-by-url`. The parameter now accepts a full ISO 8601 datetime string (`YYYY-MM-DDTHH:MM:SS`) instead of a plain date. This enables intraday filtering — e.g. `"2026-05-04T08:00:00"` keeps only listings published from that exact time onward, not just from that calendar day.
+- The internal comparison in `_page_has_old_listings` and `_filter_by_min_publish_date` now operates on full `datetime` objects instead of stripping to `.date()`, preserving hour/minute precision.
+- German date strings (`"Heute, 08:46"`, `"Gestern, 14:29"`) already produced full ISO 8601 datetimes — no parsing changes required.
+
+#### Tests
+
+- 3 new live integration tests in `tests/test_inserate_by_url_live.py` covering `min_publish_date`:
+  - Future cutoff (`2099-01-01T00:00:00`) returns 0 results and stops after page 1.
+  - Past cutoff (`2000-01-01T00:00:00`) does not filter anything — result count unchanged.
+  - All returned `published_at` values satisfy the cutoff when a real intraday threshold is used.
+
+---
+
+### May 2026 — URL-passthrough scraping, publish date, rate-limit fixes
+
+**Maintainer:** [Darko Palić](https://github.com/dpalic)
+
+#### New endpoints
+
+- **`POST /inserate-by-url`** — scrape listings using any full Kleinanzeigen search URL. All filters encoded in the URL (category, brand, year, fuel type, transmission, body type, etc.) are preserved as-is. Page numbers are injected automatically for multi-page fetching. Response includes `total_results` (total hit count from the page breadcrumb, no extra request) and `published_at` on every listing.
+- **`POST /convert-url`** — parse a Kleinanzeigen URL into `inserate_params` (what `/inserate` understands today) and `unmapped` (filters not yet supported by the structured endpoint).
+
+#### New listing field
+
+- **`published_at`** — ISO 8601 publish datetime added to every listing result (e.g. `"2026-05-04T22:06:00"`). Extracted from the listing card during the existing page load — no extra request. Older listings return a date-only value (`"2026-04-26T00:00:00"`); `null` if not shown on the card.
+
+#### Bug fixes
+
+- **Cookie clearing on context release** — browser contexts now have session cookies cleared before returning to the pool, preventing Kleinanzeigen tracking state from carrying over between unrelated requests and causing silent empty results on pages 2+.
+- **Inter-page delay** — a 2-second pause between sequential page fetches within a single multi-page scrape reduces bot-detection false positives.
+
+#### Tests
+
+- 11 unit tests for `/convert-url` (`tests/test_convert_url.py`, no server required)
+- 14 live integration tests for `/inserate-by-url` (`tests/test_inserate_by_url_live.py`), covering JSON structure, `published_at`, `total_results`, and exact result counts for 1–4 pages (25 / 50 / 75 / 100 results)
