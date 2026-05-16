@@ -606,6 +606,118 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 ## Changelog
 
+### May 2026 — Multi-image fetching, deleted-ad detection, media response restructure ⚠️ Breaking
+
+**Maintainer:** [Darko Palić](https://github.com/dpalic)
+
+#### ⚠️ Breaking changes
+
+##### 1. `GET /inserat/{id}` — response shape changed
+
+The `images` and `views` top-level fields have been replaced. The data is still present
+but lives in a different location.
+
+| Field | Before | After |
+|---|---|---|
+| Image URLs | `data.images` → `["url"]` (one image) | `data.media.images.urls` → `["url1", "url2", …]` (all images) |
+| Image count | not provided | `data.media.images.count` |
+| Views | `data.views` | `data.extra_info.views` (unchanged location — was already there) |
+
+**How to migrate:**
+
+```python
+# Before
+image = response["data"]["images"]        # single URL string or list of one
+views = response["data"]["views"]
+
+# After
+images = response["data"]["media"]["images"]["urls"]   # list of all gallery images
+count  = response["data"]["media"]["images"]["count"]
+views  = response["data"]["extra_info"]["views"]       # unchanged
+```
+
+```javascript
+// Before
+const image = data.images;
+const views = data.views;
+
+// After
+const images = data.media.images.urls;   // array of all gallery images
+const count  = data.media.images.count;
+const views  = data.extra_info.views;    // unchanged
+```
+
+##### 2. `GET /inserat/{id}` — deleted/expired ads now return HTTP 404
+
+Previously, fetching a deleted or expired ad returned HTTP 200 with `success: true`
+and empty fields (title `"[ERROR] Title not found"`, status `"active"`).
+
+Now, two conditions are detected and return HTTP **404** with `success: false`:
+- The URL redirects away from the ad page (ad deleted — Kleinanzeigen redirects to homepage)
+- The page contains `#srchrslt-adexpired` (ad expired page)
+
+**How to migrate:**
+
+```python
+# Before — callers had to inspect fields to detect a missing ad
+resp = requests.get(f"/inserat/{id}", params={"batch_id": "x"})
+data = resp.json()["data"]
+if data["title"] == "[ERROR] Title not found":
+    # ad was gone
+
+# After — standard HTTP semantics
+resp = requests.get(f"/inserat/{id}", params={"batch_id": "x"})
+if resp.status_code == 404:
+    # ad is deleted or expired
+    print(resp.json()["detail"]["status"])  # "deleted"
+else:
+    data = resp.json()["data"]
+```
+
+```javascript
+// Before
+const res = await fetch(`/inserat/${id}?batch_id=x`);
+const { data } = await res.json();
+if (data.title === "[ERROR] Title not found") { /* gone */ }
+
+// After
+const res = await fetch(`/inserat/${id}?batch_id=x`);
+if (res.status === 404) {
+    const { detail } = await res.json();
+    // detail.status === "deleted"
+} else {
+    const { data } = await res.json();
+}
+```
+
+#### New fields (non-breaking, additive)
+
+- **`data.scraped_at`** — ISO 8601 UTC timestamp of when the ad was scraped
+- **`data.url_requested`** — URL sent to Kleinanzeigen (built from the id)
+- **`data.url_redirected`** — final URL after any server-side redirect
+- **`data.seller.user_id`** — numeric Kleinanzeigen user ID extracted from the profile link href
+
+#### Improvements (non-breaking)
+
+- **All gallery images returned** — previously only the first image was fetched
+  (`#viewad-image`). Now all images from `.galleryimage-element img` are returned,
+  including `data-src` lazy-loaded images. Deduplication applied.
+- **`POST /inserate-by-url` — smarter pagination** — breadcrumb is now fully parsed
+  on page 1 to determine the exact page count. Fetching stops automatically when the
+  real page count is reached, avoiding wasted requests for non-existent pages.
+- **`POST /inserate-by-url` — URL pagination fix** — page injection now correctly
+  handles complex URLs with filters before the category segment
+  (e.g. `anzeige:angebote`, `preis::N`).
+- **Healthcheck endpoint** — `GET /health` added for load balancer / uptime monitoring.
+
+#### Tests
+
+- 16 live integration tests in `tests/test_inserat_live.py` covering active ads
+  (both full-segment and plain adid formats), all response fields, and deleted-ad
+  detection (HTTP 404, `status: "deleted"`) for 2 known-expired ad IDs.
+
+---
+
 ### May 2026 — `GET /inserat/{id}` URL tracking (`url_requested` / `url_redirected`)
 
 **Maintainer:** [Darko Palić](https://github.com/dpalic)
