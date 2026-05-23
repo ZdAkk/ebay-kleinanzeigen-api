@@ -4,6 +4,7 @@ from routers import (
     inserate_ultra as inserate,
     inserat,
     inserate_detailed_ultra as inserate_detailed,
+    inserate_batch,
     convert_url,
     inserate_by_url,
 )
@@ -55,5 +56,6 @@ async def root():
 app.include_router(inserate.router)
 app.include_router(inserat.router)
 app.include_router(inserate_detailed.router)
+app.include_router(inserate_batch.router)
 app.include_router(convert_url.router)
 app.include_router(inserate_by_url.router)

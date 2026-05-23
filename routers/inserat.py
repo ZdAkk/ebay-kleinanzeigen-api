@@ -1,16 +1,23 @@
 from scrapers.inserat import get_inserate_details_optimized
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Query
 
 router = APIRouter()
 
 
 @router.get("/inserat/{id}")
-async def get_inserat(request: Request, id: str):
+async def get_inserat(
+    request: Request,
+    id: str,
+    batch_id: str = Query(..., description="Client-supplied ID to correlate multiple calls in server logs"),
+):
     """
     Fetch detailed information for a specific listing.
 
     Retrieves comprehensive details including description, seller information,
     location, pricing, and other metadata for the specified listing ID.
+
+    Pass batch_id to correlate multiple sequential calls in server logs:
+      GET /inserat/123?batch_id=my-session
     """
     if not id or not id.strip():
         raise HTTPException(status_code=400, detail="Invalid listing ID")
@@ -20,9 +27,16 @@ async def get_inserat(request: Request, id: str):
         raise HTTPException(status_code=503, detail="Service unavailable")
 
     try:
-        response = await get_inserate_details_optimized(browser_manager, id)
+        response = await get_inserate_details_optimized(
+            browser_manager, id, request_id=batch_id
+        )
 
         if not response.get("success", False):
+            if response.get("not_found"):
+                raise HTTPException(
+                    status_code=404,
+                    detail={"error": "Ad not found or has been deleted", "status": "deleted"},
+                )
             raise HTTPException(
                 status_code=500, detail="Failed to fetch listing details"
             )

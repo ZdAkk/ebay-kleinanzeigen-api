@@ -319,12 +319,13 @@ class ConnectionPoolManager:
 
 
 # Decorator for monitoring slow coroutines
-def monitor_slow_coroutines(threshold: float = 0.1):
+def monitor_slow_coroutines(threshold: float = 0.1, context_fn=None):
     """
     Decorator to monitor and log slow coroutines.
 
     Args:
         threshold: Time threshold in seconds to consider a coroutine slow
+        context_fn: Optional callable(*args, **kwargs) -> str for extra context in the log line
     """
 
     def decorator(func):
@@ -339,7 +340,11 @@ def monitor_slow_coroutines(threshold: float = 0.1):
             finally:
                 duration = time.perf_counter() - start
                 if duration > threshold:
-                    print(f"Slow coroutine: {func.__name__} took {duration:.3f}s")
+                    try:
+                        ctx = f" [{context_fn(*args, **kwargs)}]" if context_fn else ""
+                    except Exception:
+                        ctx = ""
+                    print(f"Slow coroutine: {func.__name__} took {duration:.3f}s{ctx}")
 
         return wrapper
 

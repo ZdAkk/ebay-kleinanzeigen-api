@@ -11,6 +11,9 @@ A real listing id is fetched first via /inserate-by-url to ensure the id is vali
 Two fixture variants test the two accepted id formats:
   - full URL segment  (adid-category_id-location_id) — no redirect, ~4s
   - plain adid only                                  — server redirect,  ~7s
+
+Deleted-ad tests use a known-expired ID. If that ID is ever recycled by
+Kleinanzeigen the deleted-ad tests will need a new ID.
 """
 
 import pytest
@@ -23,23 +26,19 @@ SEARCH_URL = (
     "k0c216+autos.marke_s:volkswagen"
 )
 
+# Known-deleted ads — all verified gone at time of writing (2026-05-09).
+# If any entry returns 200 the test fails with an explicit "ID recycled" message
+# so it is obvious the ID list needs updating rather than the detection logic.
+DELETED_AD_IDS = [
+    "3400236352",  # Mazda CX5 150ps
+    "3400603080",  # VW Passat Alltrack 4Motion DSG
+]
+
 EXPECTED_DATA_FIELDS = {
-    "id",
-    "url_requested",
-    "url_redirected",
-    "categories",
-    "title",
-    "status",
-    "price",
-    "delivery",
-    "location",
-    "views",
-    "description",
-    "images",
-    "details",
-    "features",
-    "seller",
-    "extra_info",
+    "id", "url_requested", "url_redirected",
+    "categories", "title", "status", "price",
+    "delivery", "location", "description",
+    "media", "details", "features", "seller", "extra_info",
 }
 
 EXPECTED_TOP_FIELDS = {"success", "time_taken", "data", "performance_metrics"}
@@ -74,7 +73,7 @@ def listing(http_client):
 def full_segment_response(http_client, listing):
     """Fetch detail using the full URL segment from the listing url field."""
     segment = listing["url"].rstrip("/").split("/")[-1]
-    resp = http_client.get(f"/inserat/{segment}")
+    resp = http_client.get(f"/inserat/{segment}", params={"batch_id": "test-full-segment"})
     assert resp.status_code == 200, f"HTTP {resp.status_code}: {resp.text[:200]}"
     return resp.json()
 
@@ -83,9 +82,11 @@ def full_segment_response(http_client, listing):
 def plain_adid_response(http_client, full_segment_response):
     """Fetch detail using only the plain adid — triggers a server-side redirect."""
     adid = full_segment_response["data"]["id"]
-    resp = http_client.get(f"/inserat/{adid}")
+    resp = http_client.get(f"/inserat/{adid}", params={"batch_id": "test-plain-adid"})
     assert resp.status_code == 200, f"HTTP {resp.status_code}: {resp.text[:200]}"
     return resp.json()
+
+
 
 
 # ── Top-level structure ───────────────────────────────────────────────────────
@@ -168,4 +169,37 @@ def test_categories_is_list(full_segment_response):
 
 
 def test_images_is_list(full_segment_response):
-    assert isinstance(full_segment_response["data"]["images"], list)
+    assert isinstance(full_segment_response["data"]["media"]["images"]["urls"], list)
+
+
+# ── Deleted / not-found ads ───────────────────────────────────────────────────
+
+@pytest.mark.parametrize("ad_id", DELETED_AD_IDS)
+def test_deleted_ad(http_client, ad_id):
+    resp = http_client.get(f"/inserat/{ad_id}", params={"batch_id": "test-deleted"})
+
+    if resp.status_code == 200:
+        data = resp.json().get("data", {})
+        title = data.get("title") or "(no title)"
+        pytest.fail(
+            f"Ad {ad_id} returned 200 — it may have been recycled by Kleinanzeigen "
+            f"(title: {title!r}). Remove this ID from DELETED_AD_IDS and replace it "
+            f"with a freshly deleted one."
+        )
+
+    assert resp.status_code == 404, (
+        f"Ad {ad_id}: expected 404, got {resp.status_code}: {resp.text[:200]}"
+    )
+    body = resp.json()
+    assert body.get("detail", {}).get("status") == "deleted", (
+        f"Ad {ad_id}: response body missing status=deleted: {body}"
+    )
+    assert "deleted" in body.get("detail", {}).get("error", "").lower(), (
+        f"Ad {ad_id}: error message does not mention 'deleted': {body}"
+    )
+
+
+def test_active_ad_does_not_report_deleted(full_segment_response):
+    """Guard: a live ad must never come back with status=deleted."""
+    assert full_segment_response["data"]["status"] != "deleted"
+    assert full_segment_response["success"] is True

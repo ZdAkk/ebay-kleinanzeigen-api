@@ -216,7 +216,10 @@ class UltraOptimizedScraper:
         except Exception:
             return ""
 
-    @monitor_slow_coroutines(threshold=2.0)
+    @monitor_slow_coroutines(
+        threshold=2.0,
+        context_fn=lambda self, url, page_num, *a, **kw: f"OVERVIEW page {page_num}: {url}",
+    )
     async def ultra_optimized_fetch_page(
         self,
         url: str,
@@ -234,6 +237,7 @@ class UltraOptimizedScraper:
         - Comprehensive error handling
         """
         logger = ErrorLogger(f"ultra_scraper_page_{page_num}")
+        logger.logger.info(f"[OVERVIEW] Fetching page {page_num}: {url}")
 
         with error_handling_context(
             operation="ultra_fetch_page", page_number=page_num, url=url, logger=logger

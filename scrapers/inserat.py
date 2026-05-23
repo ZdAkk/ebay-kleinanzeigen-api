@@ -2,6 +2,7 @@ from fastapi import HTTPException
 from libs.websites import kleinanzeigen as lib
 import re
 import time
+from datetime import datetime, timezone
 from utils.browser import OptimizedPlaywrightManager
 from utils.performance import PageMetrics
 from utils.error_handling import (
@@ -11,11 +12,47 @@ from utils.error_handling import (
     error_handling_context,
 )
 
+_AD_URL_PREFIX = "https://www.kleinanzeigen.de/s-anzeige/"
+
+
+def _deleted_response(url_requested: str, url_redirected: str) -> dict:
+    return {
+        "id": None,
+        "scraped_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "url_requested": url_requested,
+        "url_redirected": url_redirected,
+        "not_found": True,
+        "status": "deleted",
+        "categories": [],
+        "title": None,
+        "price": {"amount": "0", "currency": "€", "negotiable": False},
+        "delivery": None,
+        "location": {"zip": "", "city": "", "state": ""},
+        "media": {
+            "images": {"count": 0, "urls": []},
+            "videos": {"count": 0, "urls": []},
+            "audios": {"count": 0, "urls": []},
+        },
+        "details": {},
+        "features": {},
+        "description": None,
+        "seller": {"name": None, "user_id": None, "since": None, "type": "private", "badges": []},
+        "extra_info": {"created_at": None, "views": "0"},
+    }
+
 
 async def get_inserate_details(url: str, page):
     try:
         await page.goto(url, timeout=120000)
         final_url = page.url
+
+        # Redirect away from the ad URL means the ad is gone
+        if not final_url.startswith(_AD_URL_PREFIX):
+            return _deleted_response(url, final_url)
+
+        # Kleinanzeigen expired-ad page (alternative to redirect)
+        if await page.query_selector("#srchrslt-adexpired"):
+            return _deleted_response(url, final_url)
 
         try:
             await page.wait_for_selector(
@@ -70,7 +107,7 @@ async def get_inserate_details(url: str, page):
             description = re.sub(r"[ \t]+", " ", description).strip()
             description = re.sub(r"\n+", "\n", description)
 
-        images = await lib.get_image_sources(page, "#viewad-image")
+        images = await lib.get_image_sources(page, ".galleryimage-element img")
         seller_details = await lib.get_seller_details(page)
         details = (
             await lib.get_details(page)
@@ -98,6 +135,7 @@ async def get_inserate_details(url: str, page):
 
         return {
             "id": ad_id,
+            "scraped_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "url_requested": url,
             "url_redirected": final_url,
             "categories": categories,
@@ -108,11 +146,14 @@ async def get_inserate_details(url: str, page):
             "price": price,
             "delivery": shipping,
             "location": location,
-            "views": views if views else "0",
-            "description": description,
-            "images": images,
+            "media": {
+                "images": {"count": len(images), "urls": images},
+                "videos": {"count": 0, "urls": []},
+                "audios": {"count": 0, "urls": []},
+            },
             "details": details,
             "features": features,
+            "description": description,
             "seller": seller_details,
             "extra_info": extra_info,
         }
@@ -122,7 +163,11 @@ async def get_inserate_details(url: str, page):
 
 
 async def get_inserate_details_optimized(
-    browser_manager: OptimizedPlaywrightManager, listing_id: str, retry_count: int = 2
+    browser_manager: OptimizedPlaywrightManager,
+    listing_id: str,
+    retry_count: int = 2,
+    request_id: str = None,
+    progress: str = None,
 ) -> dict:
     """
     Optimized version of get_inserate_details with comprehensive error handling and performance tracking.
@@ -144,6 +189,9 @@ async def get_inserate_details_optimized(
     tracker.start_request()
 
     url = f"https://www.kleinanzeigen.de/s-anzeige/{listing_id}"
+    _rid = f" {request_id}" if request_id else ""
+    _pos = f" {progress}" if progress else ""
+    logger.logger.info(f"[DETAIL{_rid}{_pos}] Fetching ad {listing_id}: {url}")
 
     with error_handling_context(
         operation="fetch_listing_details", listing_id=listing_id, url=url, logger=logger
@@ -163,6 +211,10 @@ async def get_inserate_details_optimized(
 
                         # Get listing details using existing function
                         details = await get_inserate_details(url, page)
+
+                        # Ad is gone (redirect or expired page detected)
+                        if details.get("not_found"):
+                            return details
 
                         # Validate the extracted details
                         if not details or not details.get("id"):
@@ -196,6 +248,24 @@ async def get_inserate_details_optimized(
                 details = await browser_manager.execute_with_semaphore(
                     fetch_operation()
                 )
+
+                # Ad was not found (redirect or expired page): return not-found response immediately
+                if details.get("not_found"):
+                    browser_metrics = browser_manager.get_performance_metrics()
+                    tracker.set_browser_contexts_used(
+                        browser_metrics["contexts_in_use"]
+                        + browser_metrics["contexts_in_pool"]
+                    )
+                    tracker.set_concurrent_level(1)
+                    request_metrics = tracker.get_request_metrics()
+                    return {
+                        "success": False,
+                        "not_found": True,
+                        "data": details,
+                        "time_taken": round(request_metrics.total_time, 3),
+                        "performance_metrics": request_metrics.to_dict(),
+                        "browser_metrics": browser_metrics,
+                    }
 
                 # Create successful page metric with warning information
                 page_metric = PageMetrics(
