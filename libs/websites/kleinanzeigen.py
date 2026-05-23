@@ -1,6 +1,5 @@
 import re
 from typing import Dict, List, Optional, Union, Any
-from urllib.parse import urlparse, parse_qs
 from playwright.async_api import Page, ElementHandle
 
 

@@ -1,6 +1,6 @@
 import asyncio
 import uuid
-from typing import List, Optional
+from typing import List
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel

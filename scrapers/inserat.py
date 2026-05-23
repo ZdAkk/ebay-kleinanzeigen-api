@@ -101,7 +101,6 @@ async def get_inserate_details(url: str, page):
 
         price_element = await lib.get_element_content(page, "#viewad-price")
         price = lib.parse_price(price_element)
-        views = await lib.get_element_content(page, "#viewad-cntr-num")
         description = await lib.get_element_content(page, "#viewad-description-text")
         if description:
             description = re.sub(r"[ \t]+", " ", description).strip()
