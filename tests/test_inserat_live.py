@@ -35,10 +35,21 @@ DELETED_AD_IDS = [
 ]
 
 EXPECTED_DATA_FIELDS = {
-    "id", "url_requested", "url_redirected",
-    "categories", "title", "status", "price",
-    "delivery", "location", "description",
-    "media", "details", "features", "seller", "extra_info",
+    "id",
+    "url_requested",
+    "url_redirected",
+    "categories",
+    "title",
+    "status",
+    "price",
+    "delivery",
+    "location",
+    "description",
+    "media",
+    "details",
+    "features",
+    "seller",
+    "extra_info",
 }
 
 EXPECTED_TOP_FIELDS = {"success", "time_taken", "data", "performance_metrics"}
@@ -73,7 +84,9 @@ def listing(http_client):
 def full_segment_response(http_client, listing):
     """Fetch detail using the full URL segment from the listing url field."""
     segment = listing["url"].rstrip("/").split("/")[-1]
-    resp = http_client.get(f"/inserat/{segment}", params={"batch_id": "test-full-segment"})
+    resp = http_client.get(
+        f"/inserat/{segment}", params={"batch_id": "test-full-segment"}
+    )
     assert resp.status_code == 200, f"HTTP {resp.status_code}: {resp.text[:200]}"
     return resp.json()
 
@@ -85,8 +98,6 @@ def plain_adid_response(http_client, full_segment_response):
     resp = http_client.get(f"/inserat/{adid}", params={"batch_id": "test-plain-adid"})
     assert resp.status_code == 200, f"HTTP {resp.status_code}: {resp.text[:200]}"
     return resp.json()
-
-
 
 
 # ── Top-level structure ───────────────────────────────────────────────────────
@@ -173,6 +184,7 @@ def test_images_is_list(full_segment_response):
 
 
 # ── Deleted / not-found ads ───────────────────────────────────────────────────
+
 
 @pytest.mark.parametrize("ad_id", DELETED_AD_IDS)
 def test_deleted_ad(http_client, ad_id):

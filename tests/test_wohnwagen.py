@@ -40,12 +40,12 @@ async def run_search(
     max_pages: int,
     min_publish_date: str | None,
 ) -> None:
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Search: {search['label']}")
     print(f"URL:    {search['url']}")
     if min_publish_date:
         print(f"Since:  {min_publish_date}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     payload: dict = {"url": search["url"], "max_pages": max_pages}
     if min_publish_date:

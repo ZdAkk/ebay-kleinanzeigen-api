@@ -40,12 +40,12 @@ async def run_search(
     max_pages: int,
     min_publish_date: str | None,
 ) -> None:
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Search: {search['label']}")
     print(f"URL:    {search['url']}")
     if min_publish_date:
         print(f"Since:  {min_publish_date}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     payload: dict = {"url": search["url"], "max_pages": max_pages}
     if min_publish_date:
@@ -71,7 +71,7 @@ async def run_search(
                 return
 
             listings = data.get("results", [])
-            metrics  = data.get("performance_metrics", {})
+            metrics = data.get("performance_metrics", {})
 
             print(f"Total results  : {data.get('total_results', 'N/A')}")
             print(f"Fetched        : {len(listings)}")
@@ -84,7 +84,7 @@ async def run_search(
                 print("\nNo listings returned.")
                 return
 
-            print(f"\n{'─'*60}")
+            print(f"\n{'─' * 60}")
             for i, item in enumerate(listings, 1):
                 price = (item.get("price") or "").strip()
                 print(f"{i:>4}. {item.get('title', 'N/A')}")
@@ -115,7 +115,7 @@ async def main() -> None:
         for search in SEARCHES:
             await run_search(session, search, max_pages, min_publish_date)
 
-    print(f"\n{'='*60}\nDone.\n")
+    print(f"\n{'=' * 60}\nDone.\n")
 
 
 if __name__ == "__main__":

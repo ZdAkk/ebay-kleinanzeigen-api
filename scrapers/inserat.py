@@ -36,7 +36,13 @@ def _deleted_response(url_requested: str, url_redirected: str) -> dict:
         "details": {},
         "features": {},
         "description": None,
-        "seller": {"name": None, "user_id": None, "since": None, "type": "private", "badges": []},
+        "seller": {
+            "name": None,
+            "user_id": None,
+            "since": None,
+            "type": "private",
+            "badges": [],
+        },
         "extra_info": {"created_at": None, "views": "0"},
     }
 

@@ -22,7 +22,9 @@ async def get_image_sources(page: Page, selector: str) -> List[str]:
     seen: set = set()
     images: List[str] = []
     for el in elements:
-        src: str = await el.get_attribute("src") or await el.get_attribute("data-src") or ""
+        src: str = (
+            await el.get_attribute("src") or await el.get_attribute("data-src") or ""
+        )
         if "prod-ads" in src and src not in seen:
             seen.add(src)
             images.append(src)
@@ -60,7 +62,13 @@ def _extract_user_id(href: str) -> Optional[str]:
 
 
 async def get_seller_details(page: Page) -> Dict[str, Optional[str]]:
-    result = {"name": None, "user_id": None, "since": None, "type": "private", "badges": []}
+    result = {
+        "name": None,
+        "user_id": None,
+        "since": None,
+        "type": "private",
+        "badges": [],
+    }
 
     try:
         # Get seller name and user ID from the profile link.

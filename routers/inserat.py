@@ -8,7 +8,9 @@ router = APIRouter()
 async def get_inserat(
     request: Request,
     id: str,
-    batch_id: str = Query(..., description="Client-supplied ID to correlate multiple calls in server logs"),
+    batch_id: str = Query(
+        ..., description="Client-supplied ID to correlate multiple calls in server logs"
+    ),
 ):
     """
     Fetch detailed information for a specific listing.
@@ -35,7 +37,10 @@ async def get_inserat(
             if response.get("not_found"):
                 raise HTTPException(
                     status_code=404,
-                    detail={"error": "Ad not found or has been deleted", "status": "deleted"},
+                    detail={
+                        "error": "Ad not found or has been deleted",
+                        "status": "deleted",
+                    },
                 )
             raise HTTPException(
                 status_code=500, detail="Failed to fetch listing details"

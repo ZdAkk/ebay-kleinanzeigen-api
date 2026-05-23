@@ -232,21 +232,27 @@ def test_single_page_metrics(single_page_response):
 
 def test_two_pages_metrics(two_page_response):
     pm = two_page_response["performance_metrics"]
-    assert 1 <= pm["pages_requested"] <= 2, f"Expected 1–2 pages, got {pm['pages_requested']}"
+    assert 1 <= pm["pages_requested"] <= 2, (
+        f"Expected 1–2 pages, got {pm['pages_requested']}"
+    )
     assert pm["pages_successful"] == pm["pages_requested"]
     assert pm["success_rate"] == 100.0
 
 
 def test_three_pages_metrics(three_page_response):
     pm = three_page_response["performance_metrics"]
-    assert 1 <= pm["pages_requested"] <= 3, f"Expected 1–3 pages, got {pm['pages_requested']}"
+    assert 1 <= pm["pages_requested"] <= 3, (
+        f"Expected 1–3 pages, got {pm['pages_requested']}"
+    )
     assert pm["pages_successful"] == pm["pages_requested"]
     assert pm["success_rate"] == 100.0
 
 
 def test_four_pages_metrics(four_page_response):
     pm = four_page_response["performance_metrics"]
-    assert 1 <= pm["pages_requested"] <= 4, f"Expected 1–4 pages, got {pm['pages_requested']}"
+    assert 1 <= pm["pages_requested"] <= 4, (
+        f"Expected 1–4 pages, got {pm['pages_requested']}"
+    )
     assert pm["pages_successful"] == pm["pages_requested"]
     assert pm["success_rate"] == 100.0
 

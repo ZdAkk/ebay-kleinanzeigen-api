@@ -218,7 +218,9 @@ class UltraOptimizedScraper:
 
     @monitor_slow_coroutines(
         threshold=2.0,
-        context_fn=lambda self, url, page_num, *a, **kw: f"OVERVIEW page {page_num}: {url}",
+        context_fn=lambda self, url, page_num, *a, **kw: (
+            f"OVERVIEW page {page_num}: {url}"
+        ),
     )
     async def ultra_optimized_fetch_page(
         self,
