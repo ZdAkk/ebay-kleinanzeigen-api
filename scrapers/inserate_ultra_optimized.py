@@ -172,9 +172,26 @@ class UltraOptimizedScraper:
                 article, "p.aditem-main--middle--description"
             )
             date_task = self._get_text_content(article, ".aditem-main--top--right")
+            location_task = self._get_text_content(
+                article, ".aditem-main--top--left"
+            )
+            image_task = self._get_attribute(article, ".imagebox img", "src")
 
-            title_text, price_text, description_text, date_raw = await asyncio.gather(
-                title_task, price_task, desc_task, date_task, return_exceptions=True
+            (
+                title_text,
+                price_text,
+                description_text,
+                date_raw,
+                location_raw,
+                image_url,
+            ) = await asyncio.gather(
+                title_task,
+                price_task,
+                desc_task,
+                date_task,
+                location_task,
+                image_task,
+                return_exceptions=True,
             )
 
             # Process price text efficiently
@@ -192,6 +209,18 @@ class UltraOptimizedScraper:
                 date_raw if isinstance(date_raw, str) else ""
             )
 
+            # Clean location and raw time text (collapse whitespace/icon text)
+            location_text = (
+                " ".join(location_raw.split()).strip()
+                if isinstance(location_raw, str)
+                else ""
+            )
+            time_text = (
+                " ".join(date_raw.split()).strip()
+                if isinstance(date_raw, str)
+                else ""
+            )
+
             return {
                 "adid": data_adid,
                 "url": f"https://www.kleinanzeigen.de{data_href}",
@@ -200,6 +229,9 @@ class UltraOptimizedScraper:
                 "description": description_text
                 if isinstance(description_text, str)
                 else "",
+                "image_url": image_url if isinstance(image_url, str) else "",
+                "location": location_text,
+                "time": time_text,
                 "published_at": published_at,
             }
 
@@ -212,6 +244,19 @@ class UltraOptimizedScraper:
             element = await parent_element.query_selector(selector)
             if element:
                 return await element.inner_text()
+            return ""
+        except Exception:
+            return ""
+
+    async def _get_attribute(
+        self, parent_element, selector: str, attribute: str
+    ) -> str:
+        """Efficiently get an attribute value from an element."""
+        try:
+            element = await parent_element.query_selector(selector)
+            if element:
+                value = await element.get_attribute(attribute)
+                return value or ""
             return ""
         except Exception:
             return ""
