@@ -9,3 +9,6 @@ tests/
 *.md
 .claude/
 uv.lock
+.env
+*.env
+!env.example
