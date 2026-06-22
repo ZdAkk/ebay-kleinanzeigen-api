@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from routers import (
     inserate_ultra as inserate,
     inserat,
@@ -10,6 +10,7 @@ from routers import (
 )
 from utils.browser import OptimizedPlaywrightManager
 from utils.asyncio_optimizations import EventLoopOptimizer
+from utils.auth import verify_token
 
 # Global browser manager instance for sharing across all endpoints
 browser_manager = None
@@ -50,12 +51,14 @@ async def root():
         "message": "Welcome to the Kleinanzeigen API",
         "endpoints": ["/inserate", "/inserat/{id}", "/inserate-detailed"],
         "status": "operational",
+        "authentication": "All data endpoints require an 'x-token' header",
     }
 
 
-app.include_router(inserate.router)
-app.include_router(inserat.router)
-app.include_router(inserate_detailed.router)
-app.include_router(inserate_batch.router)
-app.include_router(convert_url.router)
-app.include_router(inserate_by_url.router)
+# All data routers require x-token header authentication
+app.include_router(inserate.router, dependencies=[Depends(verify_token)])
+app.include_router(inserat.router, dependencies=[Depends(verify_token)])
+app.include_router(inserate_detailed.router, dependencies=[Depends(verify_token)])
+app.include_router(inserate_batch.router, dependencies=[Depends(verify_token)])
+app.include_router(convert_url.router, dependencies=[Depends(verify_token)])
+app.include_router(inserate_by_url.router, dependencies=[Depends(verify_token)])
