@@ -96,11 +96,15 @@ class UltraOptimizedScraper:
 
     def __init__(self, browser_manager: OptimizedPlaywrightManager):
         self.browser_manager = browser_manager
+        # Use the CONFIGURED max concurrency, not browser_manager._semaphore._value:
+        # _value is the number of CURRENTLY FREE permits, which is 0 whenever
+        # detail requests hold them all — that sized search concurrency to 0 and
+        # hung the (normally fast) search endpoint forever.
         self.task_manager = HighPerformanceTaskManager(
-            max_concurrent=browser_manager._semaphore._value
+            max_concurrent=browser_manager.max_concurrent
         )
         self.memory_processor = MemoryOptimizedProcessor(
-            max_concurrent=browser_manager._semaphore._value,
+            max_concurrent=browser_manager.max_concurrent,
             gc_threshold=50,  # More frequent GC for memory efficiency
         )
 

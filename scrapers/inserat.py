@@ -1,5 +1,6 @@
 from fastapi import HTTPException
 from libs.websites import kleinanzeigen as lib
+import asyncio
 import re
 import time
 from datetime import datetime, timezone
@@ -49,7 +50,10 @@ def _deleted_response(url_requested: str, url_redirected: str) -> dict:
 
 async def get_inserate_details(url: str, page):
     try:
-        await page.goto(url, timeout=120000)
+        # domcontentloaded (not full load/networkidle) is enough — we only read
+        # the DOM. 30s is a failure ceiling; a healthy page loads in 1-3s. The
+        # old 120s let a single blocked navigation stall for two minutes.
+        await page.goto(url, timeout=30000, wait_until="domcontentloaded")
         final_url = page.url
 
         # Redirect away from the ad URL means the ad is gone
@@ -246,12 +250,17 @@ async def get_inserate_details_optimized(
 
                     finally:
                         if page:
-                            await page.close()
+                            try:
+                                await asyncio.wait_for(page.close(), timeout=10)
+                            except Exception:
+                                pass
                         await browser_manager.release_context(context)
 
-                # Execute with concurrency control
+                # Execute with concurrency control under a hard per-attempt
+                # ceiling; on timeout the op is cancelled and its finally
+                # releases the page + context (and the permit is freed).
                 details = await browser_manager.execute_with_semaphore(
-                    fetch_operation()
+                    fetch_operation(), timeout=60
                 )
 
                 # Ad was not found (redirect or expired page): return not-found response immediately
