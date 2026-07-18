@@ -372,9 +372,17 @@ class UltraOptimizedScraper:
                     break
 
                 finally:
-                    # Cleanup resources immediately
+                    # Cleanup resources immediately. Guard page.close() so a
+                    # failing/hanging close can't skip release_context, which
+                    # would strand the context in _context_in_use (leak).
                     if page:
-                        await page.close()
+                        try:
+                            await asyncio.wait_for(
+                                page.close(),
+                                timeout=self.browser_manager._op_timeout,
+                            )
+                        except Exception:
+                            pass
                     if context:
                         await self.browser_manager.release_context(context)
 

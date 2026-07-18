@@ -134,7 +134,13 @@ async def optimized_fetch_page(
 
                         finally:
                             if page:
-                                await page.close()
+                                try:
+                                    await asyncio.wait_for(
+                                        page.close(),
+                                        timeout=browser_manager._op_timeout,
+                                    )
+                                except Exception:
+                                    pass
                             await browser_manager.release_context(context)
 
                     # Execute with concurrency control

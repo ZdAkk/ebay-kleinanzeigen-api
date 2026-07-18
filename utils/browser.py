@@ -33,6 +33,10 @@ class OptimizedPlaywrightManager:
         self._browser = None
         self._context_pool: List[BrowserContext] = []
         self._context_in_use: List[BrowserContext] = []
+        # Creation slots reserved by get_context while it runs new_context() I/O
+        # OUTSIDE the lock, so the max_contexts ceiling still holds during the
+        # unlocked create (see get_context).
+        self._pending_creates = 0
         self._max_contexts = max_contexts
         self._max_concurrent = max_concurrent
         self._semaphore = asyncio.Semaphore(max_concurrent)
@@ -40,6 +44,10 @@ class OptimizedPlaywrightManager:
         # Hard ceiling (seconds) for any single Playwright teardown call, so a
         # hung browser op can never pin the context lock or a semaphore permit.
         self._op_timeout = 10
+        # Overall deadline (seconds) for acquiring a context. Genuine pool
+        # exhaustion then fails fast (keeping the event loop and health check
+        # responsive) instead of the acquire loop spinning forever.
+        self._acquire_timeout = 30
 
         # Performance metrics
         self._contexts_created = 0
@@ -68,12 +76,19 @@ class OptimizedPlaywrightManager:
     async def get_context(self) -> BrowserContext:
         """Get a browser context from the pool or create a new one.
 
-        When the pool is empty and we're at max_contexts, wait via a LOOP that
-        releases the lock between attempts. The previous version recursed while
-        still holding the non-reentrant _context_lock, which self-deadlocked the
-        entire manager (every get/release blocks forever) once max_contexts
-        were simultaneously in use.
+        Context CREATION I/O (new_context) runs OUTSIDE _context_lock, bounded by
+        a timeout, exactly like release_context's teardown. A creation slot is
+        reserved under the lock (_pending_creates) so the max_contexts ceiling
+        still holds while the unlocked I/O runs. The previous version awaited
+        new_context WHILE holding the lock with no timeout, so a single hung
+        create pinned the lock and froze every other get/release -> full wedge.
+
+        The acquire loop has an overall deadline so genuine pool exhaustion fails
+        fast (keeping the event loop and health check responsive) instead of
+        spinning forever; and a partially created context is always closed on
+        cancellation/timeout so it can't leak.
         """
+        deadline = asyncio.get_running_loop().time() + self._acquire_timeout
         while True:
             async with self._context_lock:
                 if self._context_pool:
@@ -82,17 +97,49 @@ class OptimizedPlaywrightManager:
                     self._contexts_reused += 1
                     return context
 
-                # Create a new context if the pool is empty and under the limit
-                if len(self._context_in_use) < self._max_contexts:
-                    context = await self._browser.new_context(
-                        user_agent=get_random_ua()
-                    )
-                    self._context_in_use.append(context)
-                    self._contexts_created += 1
-                    return context
+                # Reserve a creation slot, but do NOT touch the browser here.
+                creating = (
+                    len(self._context_in_use) + self._pending_creates
+                    < self._max_contexts
+                )
+                if creating:
+                    self._pending_creates += 1
 
-            # At the limit: release the lock, wait, then retry. Looping (not
-            # recursing) means we never try to re-acquire a lock we already hold.
+            if creating:
+                context = None
+                registered = False
+                try:
+                    context = await asyncio.wait_for(
+                        self._browser.new_context(user_agent=get_random_ua()),
+                        timeout=self._op_timeout,
+                    )
+                    async with self._context_lock:
+                        self._pending_creates -= 1
+                        self._context_in_use.append(context)
+                        self._contexts_created += 1
+                        registered = True
+                    return context
+                except BaseException:
+                    # Includes Cancelled/Timeout: free the reserved slot and
+                    # never leak a partially created context.
+                    if not registered:
+                        async with self._context_lock:
+                            self._pending_creates -= 1
+                        if context is not None:
+                            try:
+                                await asyncio.wait_for(
+                                    context.close(), timeout=self._op_timeout
+                                )
+                            except Exception:
+                                pass
+                    raise
+
+            # At the limit: wait and retry, but not forever.
+            if asyncio.get_running_loop().time() >= deadline:
+                raise TimeoutError(
+                    "get_context: context pool exhausted (no context available "
+                    f"within {self._acquire_timeout}s)"
+                )
             await asyncio.sleep(0.1)
 
     async def release_context(self, context: BrowserContext):
@@ -117,12 +164,18 @@ class OptimizedPlaywrightManager:
             for page in list(context.pages):
                 await asyncio.wait_for(page.close(), timeout=self._op_timeout)
             await asyncio.wait_for(context.clear_cookies(), timeout=self._op_timeout)
-        except Exception:
-            # Cleanup hung or failed: force-close and drop it, never repool.
+        except BaseException as exc:
+            # Cleanup hung, failed, OR was cancelled mid-teardown: force-close and
+            # drop it, never repool (it was already removed from _context_in_use
+            # above, so this is the last chance to close it). BaseException so a
+            # CancelledError still closes the context; re-raise it afterwards so
+            # the caller's cancellation is not swallowed.
             try:
                 await asyncio.wait_for(context.close(), timeout=self._op_timeout)
             except Exception:
                 pass
+            if isinstance(exc, asyncio.CancelledError):
+                raise
             return
 
         if repool:
