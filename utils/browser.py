@@ -49,9 +49,33 @@ class OptimizedPlaywrightManager:
         # responsive) instead of the acquire loop spinning forever.
         self._acquire_timeout = 30
 
+        # --- lifetime bounds (memory) ------------------------------------
+        # Nothing here used to be retired: the browser process and the pooled
+        # contexts lived for the whole container lifetime, so Chromium's memory
+        # only ever grew (observed: a 13-day-old browser process at 312 MB plus
+        # ~14 live renderers, ~890 MB total, until page loads started timing out
+        # against the 1 GB cap). Three bounded lifetimes keep it flat:
+        #   1. a context is retired after _max_context_uses acquisitions,
+        #   2. only _idle_pool_target contexts are kept warm,
+        #   3. the whole browser is relaunched every _max_ops_before_recycle ops.
+        self._max_context_uses = 50
+        self._idle_pool_target = 3
+        self._max_ops_before_recycle = 400
+        self._context_uses: dict = {}
+        self._ops_since_recycle = 0
+        self._recycling = False
+        # Under sustained load the pool is never idle, so an "only when idle"
+        # recycle would never fire. Once ops reach this (2x) hard limit we stop
+        # handing out contexts and let the in-use ones drain, which takes a few
+        # seconds at this concurrency and is well inside _acquire_timeout.
+        self._force_recycle_at = self._max_ops_before_recycle * 2
+        self._draining = False
+
         # Performance metrics
         self._contexts_created = 0
         self._contexts_reused = 0
+        self._contexts_retired = 0
+        self._browser_recycles = 0
         self._concurrent_operations = 0
         self._max_concurrent_reached = 0
 
@@ -73,6 +97,53 @@ class OptimizedPlaywrightManager:
             self._context_pool.append(context)
             self._contexts_created += 1
 
+    async def _maybe_recycle_browser(self) -> bool:
+        """Relaunch the browser process if it has done enough work and is idle.
+
+        Chromium's browser process grows across thousands of navigations and is
+        never freed while it lives, so it is replaced periodically. Only runs
+        when NOTHING is in use (no in-use contexts, no pending creates), so no
+        caller can be holding a context that is about to be destroyed. All the
+        browser I/O happens OUTSIDE _context_lock; the flag reserves the right
+        to recycle so concurrent callers wait instead of racing.
+
+        Returns True if a recycle happened.
+        """
+        async with self._context_lock:
+            if self._recycling or self._ops_since_recycle < self._max_ops_before_recycle:
+                return False
+            if self._context_in_use or self._pending_creates:
+                # Busy: wait for an idle moment, unless we're now so far past due
+                # that we stop issuing contexts and let the in-use ones drain.
+                self._draining = self._ops_since_recycle >= self._force_recycle_at
+                return False
+            self._recycling = True
+            self._draining = False
+            stale, self._context_pool = self._context_pool, []
+
+        # --- browser I/O below runs WITHOUT the lock held ---
+        try:
+            for context in stale:
+                try:
+                    await asyncio.wait_for(context.close(), timeout=self._op_timeout)
+                except Exception:
+                    pass
+            old_browser = self._browser
+            self._browser = None
+            if old_browser:
+                try:
+                    await asyncio.wait_for(old_browser.close(), timeout=self._op_timeout)
+                except Exception:
+                    pass
+            self._browser = await self._playwright.chromium.launch(headless=True)
+        finally:
+            async with self._context_lock:
+                self._context_uses.clear()
+                self._ops_since_recycle = 0
+                self._browser_recycles += 1
+                self._recycling = False
+        return True
+
     async def get_context(self) -> BrowserContext:
         """Get a browser context from the pool or create a new one.
 
@@ -89,21 +160,34 @@ class OptimizedPlaywrightManager:
         cancellation/timeout so it can't leak.
         """
         deadline = asyncio.get_running_loop().time() + self._acquire_timeout
+        await self._maybe_recycle_browser()
         while True:
+            # Retry the recycle each pass: while draining, the last release
+            # empties _context_in_use and this is what then fires the relaunch.
+            if self._draining and not self._recycling:
+                await self._maybe_recycle_browser()
+
             async with self._context_lock:
-                if self._context_pool:
+                # A recycle is in flight, the browser is mid-relaunch, or we're
+                # draining for one: wait rather than hand out a context that is
+                # about to be destroyed (or that would prolong the drain).
+                if self._recycling or self._browser is None or self._draining:
+                    creating = False
+                elif self._context_pool:
                     context = self._context_pool.pop()
                     self._context_in_use.append(context)
+                    self._context_uses[context] = self._context_uses.get(context, 0) + 1
                     self._contexts_reused += 1
+                    self._ops_since_recycle += 1
                     return context
-
-                # Reserve a creation slot, but do NOT touch the browser here.
-                creating = (
-                    len(self._context_in_use) + self._pending_creates
-                    < self._max_contexts
-                )
-                if creating:
-                    self._pending_creates += 1
+                else:
+                    # Reserve a creation slot, but do NOT touch the browser here.
+                    creating = (
+                        len(self._context_in_use) + self._pending_creates
+                        < self._max_contexts
+                    )
+                    if creating:
+                        self._pending_creates += 1
 
             if creating:
                 context = None
@@ -116,7 +200,9 @@ class OptimizedPlaywrightManager:
                     async with self._context_lock:
                         self._pending_creates -= 1
                         self._context_in_use.append(context)
+                        self._context_uses[context] = 1
                         self._contexts_created += 1
+                        self._ops_since_recycle += 1
                         registered = True
                     return context
                 except BaseException:
@@ -155,7 +241,15 @@ class OptimizedPlaywrightManager:
             if context not in self._context_in_use:
                 return  # not ours, or a double release
             self._context_in_use.remove(context)
-            repool = len(self._context_pool) < self._max_contexts // 2
+            # Retire a context once it has been reused enough times, and keep
+            # only a small warm pool. Each live context costs a Chromium
+            # renderer process (~20 MB) that is never reclaimed while pooled, so
+            # an unbounded pool of endlessly-reused contexts was a steady leak.
+            worn = self._context_uses.get(context, 0) >= self._max_context_uses
+            repool = not worn and len(self._context_pool) < self._idle_pool_target
+            if not repool:
+                self._context_uses.pop(context, None)
+                self._contexts_retired += 1
 
         # --- browser I/O below runs WITHOUT the lock held ---
         try:
@@ -231,6 +325,9 @@ class OptimizedPlaywrightManager:
         return {
             "contexts_created": self._contexts_created,
             "contexts_reused": self._contexts_reused,
+            "contexts_retired": self._contexts_retired,
+            "browser_recycles": self._browser_recycles,
+            "ops_since_recycle": self._ops_since_recycle,
             "contexts_in_pool": len(self._context_pool),
             "contexts_in_use": len(self._context_in_use),
             "max_contexts": self._max_contexts,
