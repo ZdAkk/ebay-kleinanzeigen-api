@@ -1,0 +1,130 @@
+{
+  "info": {
+    "name": "Kleinanzeigen API (rebase-onto-upstream)",
+    "description": "Scraper-as-API for kleinanzeigen.de.\n\nBase: upstream DanielWTE + fork features (x-token auth, image_url/location/time on list results, ARM64 Docker).\n\nAUTH: every data endpoint requires an `x-token` header equal to the server's `API_TOKEN`. Set the collection variables `baseUrl` and `token` (Collection > Variables). The `x-token` header is applied automatically via collection-level API-key auth.\n\nResponses: `{ \"success\": true, \"results\": [...] }` style envelopes.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      { "key": "key", "value": "x-token", "type": "string" },
+      { "key": "value", "value": "{{token}}", "type": "string" },
+      { "key": "in", "value": "header", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://127.0.0.1:8011", "type": "string" },
+    { "key": "token", "value": "test-secret-123", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Root / health (no auth)",
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/", "host": ["{{baseUrl}}"], "path": [""] },
+        "description": "Service info + endpoint list. Not behind auth; safe for healthchecks."
+      }
+    },
+    {
+      "name": "List listings  (GET /inserate)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/inserate?query=fahrrad&page_count=1&location=10178&radius=5&min_price=100&max_price=500&min_publish_date=2026-06-01T00:00:00",
+          "host": ["{{baseUrl}}"],
+          "path": ["inserate"],
+          "query": [
+            { "key": "query", "value": "fahrrad", "description": "Search term" },
+            { "key": "page_count", "value": "1", "description": "Pages to fetch (1-20)" },
+            { "key": "location", "value": "10178", "description": "Postal code / location", "disabled": true },
+            { "key": "radius", "value": "5", "description": "Radius in km", "disabled": true },
+            { "key": "min_price", "value": "100", "disabled": true },
+            { "key": "max_price", "value": "500", "disabled": true },
+            { "key": "min_publish_date", "value": "2026-06-01T00:00:00", "description": "Stop once listings are older than this (YYYY-MM-DDTHH:MM:SS)", "disabled": true }
+          ]
+        },
+        "description": "Fast list scrape (ultra-optimized path). Each ad returns: adid, url, title, price, description, image_url, location, time, published_at.\n\n`image_url`, `location`, `time` are the fork's enrichments; `published_at` is upstream's parsed datetime."
+      }
+    },
+    {
+      "name": "Listing details  (GET /inserat/{id})",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/inserat/3441753919",
+          "host": ["{{baseUrl}}"],
+          "path": ["inserat", "3441753919"],
+          "query": [
+            { "key": "batch_id", "value": "", "description": "Optional internal batch correlation id", "disabled": true }
+          ]
+        },
+        "description": "Full detail for one listing id (visits the ad page): title, price, description, images, seller, location, shipping, etc."
+      }
+    },
+    {
+      "name": "List + details  (GET /inserate-detailed)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/inserate-detailed?query=fahrrad&page_count=1&max_concurrent_details=5",
+          "host": ["{{baseUrl}}"],
+          "path": ["inserate-detailed"],
+          "query": [
+            { "key": "query", "value": "fahrrad" },
+            { "key": "page_count", "value": "1", "description": "Pages to fetch (1-20)" },
+            { "key": "max_concurrent_details", "value": "5", "description": "Parallel detail fetches", "disabled": true },
+            { "key": "location", "value": "10178", "disabled": true },
+            { "key": "radius", "value": "5", "disabled": true },
+            { "key": "min_price", "value": "100", "disabled": true },
+            { "key": "max_price", "value": "500", "disabled": true }
+          ]
+        },
+        "description": "Search list AND fetch each ad's full detail in one call. Slower than /inserate (visits every ad page)."
+      }
+    },
+    {
+      "name": "Batch details  (POST /inserate/batch)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"ids\": [\"3441753919\", \"3441753920\"],\n  \"max_concurrent\": 5\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/inserate/batch", "host": ["{{baseUrl}}"], "path": ["inserate", "batch"] },
+        "description": "Fetch full details for many listing ids at once. `ids` required; `max_concurrent` optional (parallelism)."
+      }
+    },
+    {
+      "name": "Convert URL → id  (POST /convert-url)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"url\": \"https://www.kleinanzeigen.de/s-anzeige/e-bike-bosch-motor/3441753919-217-1459\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/convert-url", "host": ["{{baseUrl}}"], "path": ["convert-url"] },
+        "description": "Parse a kleinanzeigen.de listing URL and return its id / structured parts."
+      }
+    },
+    {
+      "name": "List by search URL  (POST /inserate-by-url)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"url\": \"https://www.kleinanzeigen.de/s-fahrrad/k0\",\n  \"max_pages\": 1\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/inserate-by-url", "host": ["{{baseUrl}}"], "path": ["inserate-by-url"] },
+        "description": "Scrape listings from a full kleinanzeigen.de search/category URL instead of building query params. `url` required; `max_pages` and `min_publish_date` (YYYY-MM-DDTHH:MM:SS) optional."
+      }
+    }
+  ]
+}
