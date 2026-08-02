@@ -5,8 +5,13 @@ services:
       dockerfile: Dockerfile
     container_name: kleinanzeigen-api
     ports:
-      - "8000:8000"
+      # Host 8001: 8000 is already taken on the deployment box.
+      - "8001:8000"
     restart: unless-stopped
+    # Run under tini so orphaned Chromium children are reaped. Without an init,
+    # PID 1 is uvicorn, which never wait()s on them, so every browser recycle
+    # (see utils/browser.py) would leave zombie entries behind forever.
+    init: true
     environment:
       - PYTHONUNBUFFERED=1
       - API_TOKEN=${API_TOKEN}
